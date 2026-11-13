@@ -20,18 +20,21 @@ aerial photographs. Four tickets, one per part of Module 13:
 
 ## Data, in one paragraph
 
-Roof images are cut from public aerial photographs (Maine GeoLibrary town imagery, with other free U.S.
-sources for variety) using public building outlines (USA Structures, from Oak Ridge National Laboratory
-and FEMA). Each image is a small, turned crop of one roof. The packs contain **no addresses, coordinates,
-building IDs or owner details**. Sources, licences and what is deliberately left out:
+Two roof packs, both cut from free, public aerial photographs with free, public building outlines (USA
+Structures, from Oak Ridge National Laboratory and FEMA): a **training pack** of about 22,000 roofs from eight
+southern-Maine towns (spring 2022), and a **variety pack** of about 3,000 roofs from Connecticut, Indiana, Texas,
+Florida and Arizona. Each image is a 24 m square around one roof, turned straight. The packs contain **no
+addresses, coordinates, building IDs or owner details**. Sources, licences and what is deliberately left out:
 [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md).
 
 ## Repository layout (so far)
 
 ```
-scripts/build_roof_pack.py   builds a roof image pack from public map services (instructor tool)
+scripts/build_roof_pack.py   builds the roof packs from public map services (instructor tool)
+scripts/roof_sources.json    every photo source, its licence and attribution
 tests/                       offline tests for the pack builder (no downloads)
-docs/DATA_SOURCES.md         sources, licences and privacy rules for the data
+docs/DATA_SOURCES.md         sources, licences, privacy rules and known limits of the data
+packs/                       size and SHA-256 of each roof pack (the zips are on release data-v1)
 src/genroofs/                course package: data loading, models, metrics (in progress)
 notebooks/                   lecture notebooks (coming)
 ```

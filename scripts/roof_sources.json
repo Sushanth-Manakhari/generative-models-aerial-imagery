@@ -1,0 +1,132 @@
+{
+  "_about": "Sources for scripts/build_roof_pack.py. Every source here was checked for a free, no-login service and its licence (docs/DATA_SOURCES.md). Areas are whole towns or neighbourhood-sized boxes, never single homes.",
+  "footprints": {
+    "label": "USA Structures - Oak Ridge National Laboratory (ORNL) and FEMA Geospatial Response Office",
+    "url": "https://services2.arcgis.com/FiaPA4ga0iQKduv3/arcgis/rest/services/USA_Structures_View/FeatureServer/0",
+    "licence": "CC BY 4.0 on the Esri Living Atlas copy; listed on data.gov as a U.S. Government Work",
+    "fields": ["OCC_CLS", "PRIM_OCC", "SQMETERS"],
+    "where": "OCC_CLS = 'Residential'"
+  },
+  "packs": {
+    "train": {
+      "name": "roofs_maine_2022",
+      "title": "Training pack: house roofs from eight southern-Maine towns, spring 2022 (leaf-off)",
+      "target": 22000,
+      "block_m": 600,
+      "max_per_block": 250,
+      "min_homes_per_block": 15,
+      "notes": [
+        "In a check of 200 random roofs, about 4% show no house (a wooded or empty lot, a pool area) and about 3% are unclear (deep shadow, a house under construction). Public building outlines and the spring 2022 photos were not made at the same time, and trees confuse the roof check.",
+        "The autoencoder exercise (ROOF-301, 'find the strangest roofs') tends to surface exactly these images: insurers use the same idea to catch bad imagery."
+      ],
+      "sources": ["me_south_portland_2022", "me_gorham_2022", "me_windham_2022", "me_sanford_2022",
+                  "me_york_2022", "me_kennebunk_2022", "me_old_orchard_beach_2022", "me_wells_2022"]
+    },
+    "variety": {
+      "name": "roofs_us_variety",
+      "title": "Variety pack: house roofs from five U.S. regions with different climates and building styles",
+      "target": 3000,
+      "block_m": 300,
+      "max_per_block": 40,
+      "min_homes_per_block": 6,
+      "notes": [
+        "A check of 75 random roofs (15 per region) found no empty lots. Larger homes, common in Florida and Arizona, can fill most of the 24 m square."
+      ],
+      "sources": ["ct_west_hartford_2023", "in_fort_wayne_2024", "tx_round_rock_2021", "fl_miami_dade_2025",
+                  "az_tempe_2024"]
+    }
+  },
+  "sources": {
+    "me_south_portland_2022": {
+      "kind": "image", "region": "Maine", "place": "South Portland", "year": 2022,
+      "url": "https://gis.maine.gov/image/rest/services/Municipal/orthoMunicipalSouthPortland2022/ImageServer",
+      "wkid": 26919, "area": "service",
+      "licence": "No licence text on this service; the Maine GeoLibrary statewide orthoimagery metadata says \"No restrictions apply to this data.\"",
+      "attribution": "Imagery: Maine GeoLibrary, Maine Orthoimagery - South Portland 2022 (3-inch, leaf-off)"
+    },
+    "me_gorham_2022": {
+      "kind": "image", "region": "Maine", "place": "Gorham", "year": 2022,
+      "url": "https://gis.maine.gov/image/rest/services/Municipal/orthoMunicipalGorham2022/ImageServer",
+      "wkid": 26919, "area": "service",
+      "licence": "Service licence field: \"Use constraints: None\" (acknowledgement appreciated)",
+      "attribution": "Imagery: Maine GeoLibrary, Maine Orthoimagery - Municipal Gorham 2022"
+    },
+    "me_windham_2022": {
+      "kind": "image", "region": "Maine", "place": "Windham", "year": 2022,
+      "url": "https://gis.maine.gov/image/rest/services/Municipal/orthoMunicipalWindham2022/ImageServer",
+      "wkid": 26919, "area": "service",
+      "licence": "Service licence field: \"Use constraints: None\" (acknowledgement appreciated)",
+      "attribution": "Imagery: Maine GeoLibrary, Maine Orthoimagery - Municipal Windham 2022"
+    },
+    "me_sanford_2022": {
+      "kind": "image", "region": "Maine", "place": "Sanford", "year": 2022,
+      "url": "https://gis.maine.gov/image/rest/services/Municipal/orthoMunicipalSanford2022/ImageServer",
+      "wkid": 26919, "area": "service",
+      "licence": "Service licence field: \"Use constraints: None\" (acknowledgement appreciated)",
+      "attribution": "Imagery: Maine GeoLibrary, Maine Orthoimagery - Municipal Sanford 2022"
+    },
+    "me_york_2022": {
+      "kind": "image", "region": "Maine", "place": "York", "year": 2022,
+      "url": "https://gis.maine.gov/image/rest/services/Municipal/orthoMunicipalYork2022/ImageServer",
+      "wkid": 26919, "area": "service",
+      "licence": "Service licence field: \"Use constraints: None\" (acknowledgement appreciated)",
+      "attribution": "Imagery: Maine GeoLibrary, Maine Orthoimagery - York 2022"
+    },
+    "me_kennebunk_2022": {
+      "kind": "image", "region": "Maine", "place": "Kennebunk", "year": 2022,
+      "url": "https://gis.maine.gov/image/rest/services/Municipal/orthoMunicipalKennebunk2022/ImageServer",
+      "wkid": 26919, "area": "service",
+      "licence": "Service licence field: \"Use constraints: None\" (acknowledgement appreciated)",
+      "attribution": "Imagery: Maine GeoLibrary, Maine Orthoimagery - Municipal Kennebunk 2022"
+    },
+    "me_old_orchard_beach_2022": {
+      "kind": "image", "region": "Maine", "place": "Old Orchard Beach", "year": 2022,
+      "url": "https://gis.maine.gov/image/rest/services/Municipal/orthoMunicipalOldOrchardBeach2022/ImageServer",
+      "wkid": 26919, "area": "service",
+      "licence": "Service licence field: \"Use constraints: None\" (acknowledgement appreciated)",
+      "attribution": "Imagery: Maine GeoLibrary, Maine Orthoimagery - Old Orchard Beach 2022"
+    },
+    "me_wells_2022": {
+      "kind": "image", "region": "Maine", "place": "Wells", "year": 2022,
+      "url": "https://gis.maine.gov/image/rest/services/Municipal/orthoMunicipalWells2022/ImageServer",
+      "wkid": 26919, "area": "service",
+      "licence": "The service's licence field holds a description of the 2022 statewide program instead of terms (no use constraints stated); same Maine GeoLibrary program as the other towns. Included at the instructor's decision.",
+      "attribution": "Imagery: Maine GeoLibrary, Maine Orthoimagery - Municipal Wells 2022"
+    },
+    "ct_west_hartford_2023": {
+      "kind": "image", "region": "Connecticut", "place": "West Hartford", "year": 2023,
+      "url": "https://cteco.uconn.edu/ctraster/rest/services/images/Ortho_2023/ImageServer",
+      "wkid": 26918, "area_lonlat": [-72.76, 41.75, -72.71, 41.79],
+      "licence": "Metadata: \"Use constraints: None\"; acknowledgement of the providing organization appreciated",
+      "attribution": "Imagery: State of Connecticut, 2023 Statewide Orthoimagery (3-inch), served by CT ECO (UConn CLEAR and CT DEEP)"
+    },
+    "in_fort_wayne_2024": {
+      "kind": "image", "region": "Indiana", "place": "Fort Wayne", "year": 2024,
+      "url": "https://di-ingov.img.arcgis.com/arcgis/rest/services/DynamicWebMercator/Indiana_Current_Imagery/ImageServer",
+      "wkid": 26916, "area_lonlat": [-85.10, 41.10, -85.05, 41.14],
+      "licence": "CC0 1.0 (\"Access to Indiana Geographic Information Office Orthoimagery is governed by Creative Commons 0 (CC0).\")",
+      "attribution": "Imagery: Indiana Geographic Information Office (IGIO), Indiana Orthoimagery"
+    },
+    "tx_round_rock_2021": {
+      "kind": "image", "region": "Texas", "place": "Round Rock", "year": 2021,
+      "url": "https://imagery.geographic.texas.gov/server/rest/services/StratMap/StratMap21_NCCIR_CapArea_Brazos_Kerr/ImageServer",
+      "wkid": 26914, "area_lonlat": [-97.70, 30.49, -97.65, 30.53], "timeout": 180,
+      "licence": "Public domain (Texas Strategic Mapping Program, StratMap). Not the separately licensed Texas Imagery Service.",
+      "attribution": "Imagery: Texas Geographic Information Office (TxGIO), StratMap 2021 orthoimagery, with the Capital Area Council of Governments and local partners"
+    },
+    "fl_miami_dade_2025": {
+      "kind": "tiles", "region": "Florida", "place": "Miami-Dade County", "year": 2025,
+      "url": "https://gisweb.miamidade.gov/arcgis/rest/services/MapCache/MDCImagery_WebMercator/MapServer",
+      "level": 8, "area_lonlat": [-80.40, 25.67, -80.35, 25.71],
+      "licence": "No licence text on this service; public record under Florida's Public Records Law (Florida Statutes, Chapter 119). See docs/DATA_SOURCES.md.",
+      "attribution": "Imagery: Miami-Dade County GIS, 2025 aerial imagery"
+    },
+    "az_tempe_2024": {
+      "kind": "tiles", "region": "Arizona", "place": "Tempe", "year": 2024,
+      "url": "https://tiles.arcgis.com/tiles/lQySeXwbBg53XWDi/arcgis/rest/services/Aerials24/MapServer",
+      "level": 20, "area_lonlat": [-111.95, 33.34, -111.90, 33.38],
+      "licence": "CC BY 4.0",
+      "attribution": "Imagery: City of Tempe, 2024 Aerial Imagery (CC BY 4.0)"
+    }
+  }
+}

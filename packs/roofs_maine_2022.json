@@ -1,0 +1,21 @@
+{
+  "name": "roofs_maine_2022",
+  "file": "roofs_maine_2022.zip",
+  "bytes": 212949342,
+  "sha256": "d779d1a7ce973d400faf3d4ea27fbc9a40d19deaa2bef13ea4c4a564f53fd820",
+  "chips": 22000,
+  "chip_px": 128,
+  "window_m": 24.0,
+  "per_source": {
+    "me_south_portland_2022": 2761,
+    "me_gorham_2022": 2761,
+    "me_windham_2022": 2760,
+    "me_sanford_2022": 2760,
+    "me_york_2022": 2760,
+    "me_kennebunk_2022": 2760,
+    "me_old_orchard_beach_2022": 2678,
+    "me_wells_2022": 2760
+  },
+  "built": "2026-11-13",
+  "docs_updated": "2026-11-13"
+}
