@@ -1,0 +1,63 @@
+# =============================================================================
+# .gitignore for generative-models-aerial-imagery
+# Commit SOURCE (code, docs, small curated files). Never commit GENERATED
+# artifacts (virtual environments, downloaded roof packs, trained models) or SECRETS.
+# =============================================================================
+
+# ---- Python & virtual environments -----------------------------------------
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+
+# ---- Jupyter ----------------------------------------------------------------
+.ipynb_checkpoints/
+
+# ---- Data and model artifacts: published as GitHub Release assets ----------
+# Roof packs are built by scripts/build_roof_pack.py and downloaded at runtime.
+# Anchored to the project root so a future package module such as src/genroofs/data/ is not hidden.
+/data/
+/models/
+/runs/
+/checkpoints/
+/outputs/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+wandb/
+
+# ---- Local verification output (setup scripts, Colab dry-run downloads) ----
+/reports/
+
+# ---- LECTURE SLIDES: LOCAL ONLY - NEVER PUSHED TO GITHUB --------------------
+# The deck (and its speaker notes and talking notes) stays on the presenter's laptop.
+# tools/git-hooks/pre-commit blocks these as a second guard.
+slides/
+*.pptx
+*.pptm
+*.ppt
+*.potx
+*.key
+~$*
+
+# ---- Secrets: never commit tokens or keys ------------------------------------
+.env
+*.env
+secrets/
+kaggle.json
+.netrc
+
+# ---- OS / editor noise --------------------------------------------------------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

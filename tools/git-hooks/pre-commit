@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# =============================================================================
+# pre-commit hook - a second safety net on top of .gitignore.
+#
+# Blocks a commit if any STAGED file:
+#   1. is a slide deck (.pptx/.ppt/.pptm/.potx/.key) or lives in slides/
+#      -> the lecture deck and its notes are LOCAL ONLY;
+#   2. is larger than 20 MB (roof packs and trained models belong in a GitHub Release);
+#   3. looks like it contains an access token or private key;
+#   4. is a notebook that still carries Colab account details or a live demo link
+#      (raw Colab downloads must be cleaned first).
+#
+# Install with:  bash scripts/install_git_hooks.sh
+# =============================================================================
+set -euo pipefail
+
+fail=0
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+
+# ---- 1. Slides must never leave the laptop ---------------------------------
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+  case "$f" in
+    slides/*|*.pptx|*.PPTX|*.ppt|*.pptm|*.potx|*.key)
+      echo "BLOCKED: '$f' is a slide file. Slides stay local and are never pushed." >&2
+      fail=1 ;;
+  esac
+done <<< "$staged"
+
+# ---- 2. No large binaries in git history ------------------------------------
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+  [ -f "$f" ] || continue
+  size=$(wc -c < "$f" | tr -d ' ')
+  if [ "$size" -gt 20971520 ]; then
+    echo "BLOCKED: '$f' is $(( (size + 1048575) / 1048576 )) MB (limit 20 MB). Publish it as a GitHub Release asset instead." >&2
+    fail=1
+  fi
+done <<< "$staged"
+
+# ---- 3. Secret scanning on the staged changes --------------------------------
+if git diff --cached -U0 | grep -E '^\+' | grep -E -q \
+   'hf_[A-Za-z0-9]{30,}|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{40,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|WANDB_API_KEY *= *["'"'"']?[0-9a-f]{40}'; then
+  echo "BLOCKED: the staged changes look like they contain a secret or token." >&2
+  echo "         Use Colab Secrets or environment variables instead of writing keys into files." >&2
+  fail=1
+fi
+
+# ---- 4. Notebooks: no Colab account details, no live demo links -------------
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+  case "$f" in *.ipynb) ;; *) continue ;; esac
+  [ -f "$f" ] || continue
+  if grep -E -q '"(userId|displayName|executionInfo|user_tz)"|https://[a-z0-9]+\.gradio\.live' "$f"; then
+    echo "BLOCKED: '$f' still has Colab account details or a live demo link." >&2
+    echo "         Clean it first (the notebook build scripts do this)." >&2
+    fail=1
+  fi
+done <<< "$staged"
+
+if [ "$fail" -ne 0 ]; then
+  echo "Commit stopped by tools/git-hooks/pre-commit." >&2
+  exit 1
+fi
+exit 0

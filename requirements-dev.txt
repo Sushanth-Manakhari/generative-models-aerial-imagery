@@ -1,0 +1,4 @@
+# Local tools for the instructor's pack builder and its tests. Install INSIDE the project's .venv:
+#   .venv/bin/python -m pip install -r requirements-dev.txt
+-r requirements-data.txt
+pytest>=8.0
