@@ -23,8 +23,9 @@ The yard around the roof is kept. Images are 128 × 128 JPEG (the lecture trains
 - **Training pack:** in 200 random roofs, about **4% show no house** (a wooded or empty lot, a pool area) and
   about **3% are unclear** (deep shadow, a house under construction). The public building outlines and the
   spring 2022 photos were not made at the same time, and trees confuse the automatic roof check. We kept these
-  images on purpose: the autoencoder exercise (ROOF-301, "find the strangest roofs") tends to surface them,
-  which is how insurers use the same idea to catch bad imagery.
+  images on purpose. In the autoencoder exercise (ROOF-301, "find the strangest roofs") they turn up at the
+  *most ordinary* end of the ranking, not the strangest: lawns, woods and empty lots are easy to copy, so a
+  reconstruction score misses "no house here". The exercise shows both ends so the class can discuss that limit.
 - **Variety pack:** 75 random roofs (15 per region) showed no empty lots. Larger homes, common in Florida
   and Arizona, can fill most of the 24 m square.
 - Every roof was checked automatically for missing-photo areas, including the black-and-white checkerboard
@@ -67,13 +68,39 @@ Service addresses are in `scripts/roof_sources.json` and in each pack's `ATTRIBU
 - **Attribution we print:** *Building outlines: USA Structures – Oak Ridge National Laboratory (ORNL) and FEMA
   Geospatial Response Office, CC BY 4.0.*
 
-## Address lookup (lecture demo only): U.S. Census Bureau Geocoder
+## Address lookup (lecture demo only): two free geocoders, one public building
+
+The pipeline demo (`genroofs.pipeline`) looks up **one public building**, South Portland City Hall at
+25 Cottage Road, never a private home. It asks two free geocoders on purpose, because they disagree: the
+Census point lands on the street about 36 m from the roof, while OpenStreetMap's lands on the roof. The class
+sees both photo squares and discusses which "roof" a pipeline would score. Nothing from either service is
+stored in the packs or written to disk.
+
+**U.S. Census Bureau Geocoder**
 
 - **Service:** https://geocoding.geo.census.gov/geocoder/ (documentation:
   https://geocoding.geo.census.gov/geocoder/Geocoding_Services_API.html)
 - **Terms:** free U.S. government service; no key or account.
-- **Use:** in class we geocode **one public building**, never a private home, to show the first step of an
-  insurer's pipeline. Nothing from it is stored in the packs.
+- **How it finds the point:** it matches the address to a street segment and interpolates along the segment's
+  address range, so the point sits on the street, not on a building.
+
+**OpenStreetMap Nominatim** (added November 13, 2026)
+
+- **Service:** https://nominatim.openstreetmap.org/ (usage policy:
+  https://operations.osmfoundation.org/policies/nominatim/)
+- **Terms:** free, no key or account. The data is © OpenStreetMap contributors under the Open Database Licence
+  (ODbL 1.0), so the demo prints that credit.
+- **Usage policy:** at most one request per second for all users of an application together, a User-Agent
+  that names the application, and no bulk lookups. `genroofs` names itself in every request, and by default the
+  demo uses the answer Nominatim gave on November 13, 2026 (a public building does not move). Only the
+  instructor asks again, once, with `osm="live"`, so a full class never sends a burst of requests.
+- **How it finds the point:** it finds the building by its name (*South Portland City Hall*) and returns the
+  centre of its outline, so the point sits on the roof.
+
+**Photo for the demo:** the same Maine GeoLibrary South Portland 2022 service listed above, a 24 m square
+around each point. **Credit printed by the demo:** *Geocoding: U.S. Census Bureau Geocoder (public domain) and
+OpenStreetMap Nominatim (data © OpenStreetMap contributors, ODbL). Photo: Maine GeoLibrary, Maine
+Orthoimagery – South Portland 2022.*
 
 ## What the roof packs contain, and what they never contain
 
@@ -94,6 +121,8 @@ The build script refuses to zip a pack if its privacy check finds a location-lik
 | Any company's private data, images, vendor names, project names or figures | Proprietary |
 | Commercial aerial or satellite imagery | Not free for students |
 | Online map tiles from consumer map apps | Their terms forbid this kind of reuse |
+| Commercial geocoding APIs | They need a key or a paid account |
+| OpenStreetMap map tiles and bulk geocoding | Their usage policies forbid heavy use; the demo makes one lookup at most |
 | South Florida Water Management District county imagery (including Miami-Dade 2023) | Now requires a login |
 | Hillsborough County (Tampa) imagery | Restricted vendor licence |
 | Maricopa County imagery | Sold, not free |
