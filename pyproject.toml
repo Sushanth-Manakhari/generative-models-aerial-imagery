@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "genroofs"
+dynamic = ["version"]
+description = "Course package for a hands-on guest lecture on autoencoders, VAEs and GANs, built on free public aerial roof images."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Sushanth Manakhari" }]
+requires-python = ">=3.10"
+# torch is deliberately not pinned: Colab keeps its own build, laptops get the current wheel from PyPI.
+dependencies = [
+    "numpy",
+    "Pillow>=9.1",
+    "torch",
+    "matplotlib",
+    "safetensors",
+    "certifi",
+]
+
+[project.optional-dependencies]
+app = ["gradio"]
+pandas = ["pandas"]
+dev = ["pytest>=8.0"]
+
+[project.urls]
+Homepage = "https://github.com/Sushanth-Manakhari/generative-models-aerial-imagery"
+"Data sources" = "https://github.com/Sushanth-Manakhari/generative-models-aerial-imagery/blob/main/docs/DATA_SOURCES.md"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+genroofs = ["*.json"]
+
+[tool.setuptools.dynamic]
+version = { attr = "genroofs.__version__" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

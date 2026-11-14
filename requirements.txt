@@ -1,0 +1,15 @@
+# Laptop setup for the lecture (used by scripts/setup_mac.sh and scripts/setup_windows.ps1).
+# Installed into .venv inside the project folder, never globally. Versions are not pinned on purpose:
+# pip picks the newest builds that work with your Python, including torch from PyPI.
+
+# What the genroofs package needs (the same list as pyproject.toml)
+numpy
+Pillow>=9.1
+torch
+matplotlib
+safetensors
+certifi
+
+# Running the notebooks and the tests on a laptop
+jupyterlab
+pytest>=8.0
