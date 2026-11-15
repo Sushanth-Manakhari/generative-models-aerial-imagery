@@ -1,0 +1,41 @@
+{
+  "roofs_maine_2022": {
+    "name": "roofs_maine_2022",
+    "file": "roofs_maine_2022.zip",
+    "bytes": 212949342,
+    "sha256": "d779d1a7ce973d400faf3d4ea27fbc9a40d19deaa2bef13ea4c4a564f53fd820",
+    "chips": 22000,
+    "chip_px": 128,
+    "window_m": 24.0,
+    "per_source": {
+      "me_south_portland_2022": 2761,
+      "me_gorham_2022": 2761,
+      "me_windham_2022": 2760,
+      "me_sanford_2022": 2760,
+      "me_york_2022": 2760,
+      "me_kennebunk_2022": 2760,
+      "me_old_orchard_beach_2022": 2678,
+      "me_wells_2022": 2760
+    },
+    "built": "2026-11-13",
+    "docs_updated": "2026-11-13"
+  },
+  "roofs_us_variety": {
+    "name": "roofs_us_variety",
+    "file": "roofs_us_variety.zip",
+    "bytes": 29440420,
+    "sha256": "35504c82c41bdfb96f84f3d45a73a1f02f7d87840b2dd189e1c279e27bae78ab",
+    "chips": 3000,
+    "chip_px": 128,
+    "window_m": 24.0,
+    "per_source": {
+      "ct_west_hartford_2023": 600,
+      "in_fort_wayne_2024": 600,
+      "tx_round_rock_2021": 600,
+      "fl_miami_dade_2025": 600,
+      "az_tempe_2024": 600
+    },
+    "built": "2026-11-13",
+    "docs_updated": "2026-11-13"
+  }
+}
