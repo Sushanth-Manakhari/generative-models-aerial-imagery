@@ -88,7 +88,49 @@ def test_class_budget_applies_when_no_limit_is_given(monkeypatch):
     h = train.train_gan(Generator(), Discriminator(), squares(32), batch_size=16, device="cpu", verbose=False)
     assert h.settings["minutes"] == 6.0 and h.settings["epochs"] is None and h.stopped_by == "minutes"
     h = train.train_vae(RoofVAE(), squares(32), batch_size=16, device="cpu", verbose=False)
-    assert h.settings["minutes"] == 3.0
+    assert h.settings["minutes"] == 1.0
+    h = train.train_ae(RoofAE(), squares(32), batch_size=16, device="cpu", verbose=False)
+    assert h.settings["minutes"] == 1.0
+    assert train.CLASS_MINUTES == {"ae": 1.0, "vae": 1.0, "gan": 6.0}
+
+
+def test_mixed_precision_is_on_only_for_an_nvidia_gpu(capsys):
+    choose = train._use_mixed_precision
+    assert choose(None, torch.device("cuda")) is True, "the default on Colab's GPU"
+    assert choose(None, torch.device("cpu")) is False and choose(None, torch.device("mps")) is False
+    assert choose(False, torch.device("cuda")) is False, "it can be turned off"
+    assert capsys.readouterr().out == ""
+    assert choose(True, torch.device("mps")) is False
+    assert "needs an NVIDIA GPU" in capsys.readouterr().out
+
+
+def test_asking_for_mixed_precision_on_a_cpu_trains_in_full_precision(capsys):
+    h = train.train_ae(RoofAE(), squares(32), epochs=1, batch_size=16, device="cpu", verbose=False,
+                       mixed_precision=True)
+    assert h.settings["mixed_precision"] is False and h.steps == 2
+    assert "full precision" in capsys.readouterr().out
+    h = train.train_vae(RoofVAE(), squares(32), epochs=1, batch_size=16, device="cpu", verbose=False)
+    assert h.settings["mixed_precision"] is False
+
+
+def test_full_precision_step_is_unchanged():
+    """With mixed precision off, the step is the plain one: the same seed gives the same weights as before."""
+    set_seed(3)
+    a = RoofAE(latent=8)
+    set_seed(3)
+    b = RoofAE(latent=8)
+    x = data.to_float(squares(16))
+    opt = torch.optim.Adam(b.parameters(), lr=1e-3)
+    loss = train.reconstruction_loss(b(x), x)
+    opt.zero_grad(set_to_none=True)
+    loss.backward()
+    opt.step()
+    p = train._Precision(False)
+    opt_a = torch.optim.Adam(a.parameters(), lr=1e-3)
+    with p.forward():
+        copy = a(x)
+    p.step(train.reconstruction_loss(copy.float(), x), opt_a)
+    assert all(torch.equal(u, v) for u, v in zip(a.parameters(), b.parameters()))
 
 
 def test_epochs_alone_means_no_time_limit(monkeypatch):
