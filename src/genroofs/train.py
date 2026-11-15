@@ -2,16 +2,22 @@
 
 Every loop stops at whichever comes first: `minutes` of wall-clock time or `epochs` full passes over the images.
 The clock is checked before every batch, so a run ends at most one batch late. With neither given, the in-class
-budgets apply (AE 3 minutes, VAE 3 minutes, GAN 6 minutes); the long runs before the lecture pass `epochs`.
+budgets apply (AE 1 minute, VAE 1 minute, GAN 6 minutes); the long runs before the lecture pass `epochs`.
+
+Mixed precision (the "speed switch"): on an NVIDIA GPU, as on Colab, the autoencoder and the VAE do most of their
+arithmetic in half precision, about 2.5 times faster; the losses stay in full precision. Tested on a Colab T4 in
+G4.9: both reach their best copies within a minute this way, so their class budget is 1 minute instead of 3. The
+GAN stays in full precision, so exercise 4 behaves as measured in G4.8. Macs and CPUs train in full precision.
 
     from genroofs.models import RoofAE
     from genroofs.train import train_ae
     ae = RoofAE()
-    history = train_ae(ae, train.images, watch=test.images[:8])     # 3 minutes on the class slice
+    history = train_ae(ae, train.images, watch=test.images[:8])     # 1 minute on the class slice
 
 Each call returns a History: the loss of every step, the seconds of every pass, and pictures of the same roofs
 (or, for the GAN, the same noise vectors) taken as training goes, so the class can watch one fixed set improve.
 """
+import contextlib
 import json
 import math
 import time
@@ -32,7 +38,7 @@ __all__ = ["History", "reconstruction_loss", "kl_divergence", "vae_loss", "criti
            "train_ae", "train_vae", "train_gan", "save_weights", "load_weights", "weights_note", "load_pretrained",
            "WeightsNotPublished", "CLASS_MINUTES"]
 
-CLASS_MINUTES = {"ae": 3.0, "vae": 3.0, "gan": 6.0}   # in-class budgets measured on a Colab T4 in G3
+CLASS_MINUTES = {"ae": 1.0, "vae": 1.0, "gan": 6.0}   # in-class budgets on a Colab T4 (G3; AE and VAE G4.9)
 WEIGHTS_TAG = "models-v1"
 WEIGHTS_URL = f"https://github.com/{REPO}/releases/download/{WEIGHTS_TAG}/{{file}}"
 _WEIGHTS_INFO = None
@@ -172,8 +178,9 @@ def _run(hist: History, step, picture, images: torch.Tensor, *, minutes, epochs,
             why = f"the {int(epochs)}-pass limit"
         else:
             why = "a loss that became NaN or infinite (try a smaller learning rate)"
+        mp = " with mixed precision" if hist.settings.get("mixed_precision") else ""
         print(f"{hist.kind.upper()} trained {hist.passes:.1f} passes ({hist.steps:,} steps) in "
-              f"{_clock(hist.seconds)} on {device.type}; stopped by {why}.")
+              f"{_clock(hist.seconds)} on {device.type}{mp}; stopped by {why}.")
     return hist
 
 
@@ -185,6 +192,39 @@ def _limits(kind: str, minutes, epochs) -> tuple:
     if epochs is not None and int(epochs) <= 0:
         raise ValueError("epochs must be a positive whole number.")
     return minutes, epochs
+
+
+def _use_mixed_precision(mixed_precision, device: torch.device) -> bool:
+    """None (the default) turns mixed precision on for an NVIDIA GPU only. Asking for it elsewhere prints a note
+    and trains in full precision, because half precision there is slower or unreliable."""
+    if mixed_precision is None:
+        return device.type == "cuda"
+    if mixed_precision and device.type != "cuda":
+        print(f"Note: mixed precision needs an NVIDIA GPU (cuda); training on {device.type} in full precision.")
+        return False
+    return bool(mixed_precision)
+
+
+class _Precision:
+    """Runs a forward pass in half precision when mixed precision is on, and scales the loss so that small
+    gradients survive half precision (torch's GradScaler). When it is off, both do nothing."""
+
+    def __init__(self, on: bool):
+        self.on = bool(on)
+        self.scaler = torch.amp.GradScaler("cuda") if self.on else None
+
+    def forward(self):
+        return torch.autocast(device_type="cuda", dtype=torch.float16) if self.on else contextlib.nullcontext()
+
+    def step(self, loss: torch.Tensor, opt) -> None:
+        opt.zero_grad(set_to_none=True)
+        if self.on:
+            self.scaler.scale(loss).backward()
+            self.scaler.step(opt)
+            self.scaler.update()
+        else:
+            loss.backward()
+            opt.step()
 
 
 def _watch_roofs(images: torch.Tensor, watch, seed: int) -> torch.Tensor:
@@ -203,10 +243,11 @@ def _base_settings(kind, images, minutes, epochs, batch_size, seed, device, **ex
 
 def train_ae(model, images: torch.Tensor, minutes: float | None = None, epochs: int | None = None,
              batch_size: int = 128, lr: float = 1e-3, seed: int = 7, device=None, watch=None,
-             snapshots: int = 8, verbose: bool = True) -> History:
+             snapshots: int = 8, verbose: bool = True, mixed_precision: bool | None = None) -> History:
     """Train a RoofAE on uint8 roof images. Adam, learning rate 1e-3; loss = reconstruction_loss.
 
     watch: up to 16 uint8 roofs to picture as training goes (default: 8 picked from `images`).
+    mixed_precision: None (default) = on for an NVIDIA GPU, off elsewhere; True or False to choose.
     The model ends in eval mode, ready to use.
     """
     minutes, epochs = _limits("ae", minutes, epochs)
@@ -216,12 +257,13 @@ def train_ae(model, images: torch.Tensor, minutes: float | None = None, epochs: 
     watch = _watch_roofs(images, watch, seed)
     watch_x = to_float(watch.to(device))
     opt = torch.optim.Adam(model.parameters(), lr=lr)
+    precision = _Precision(_use_mixed_precision(mixed_precision, device))
 
     def step(x):
-        loss = reconstruction_loss(model(x), x)
-        opt.zero_grad(set_to_none=True)
-        loss.backward()
-        opt.step()
+        with precision.forward():
+            copy = model(x)
+        loss = reconstruction_loss(copy.float(), x)
+        precision.step(loss, opt)
         return {"loss": loss.item()}
 
     @torch.no_grad()
@@ -232,7 +274,8 @@ def train_ae(model, images: torch.Tensor, minutes: float | None = None, epochs: 
         return out
 
     hist = History("ae", _base_settings("ae", images, minutes, epochs, batch_size, seed, device, lr=lr,
-                                        model=model.settings(), parameters=count_parameters(model)),
+                                        mixed_precision=precision.on, model=model.settings(),
+                                        parameters=count_parameters(model)),
                    {"loss": []}, watch)
     _run(hist, step, picture, images, minutes=minutes, epochs=epochs, batch_size=batch_size, seed=seed,
          device=device, snapshots=snapshots, verbose=verbose)
@@ -242,11 +285,11 @@ def train_ae(model, images: torch.Tensor, minutes: float | None = None, epochs: 
 
 def train_vae(model, images: torch.Tensor, minutes: float | None = None, epochs: int | None = None,
               batch_size: int = 128, lr: float = 1e-3, beta: float = 1.0, seed: int = 7, device=None, watch=None,
-              snapshots: int = 8, verbose: bool = True) -> History:
+              snapshots: int = 8, verbose: bool = True, mixed_precision: bool | None = None) -> History:
     """Train a RoofVAE. Adam, learning rate 1e-3; loss = reconstruction + beta * KL (beta = 1 by default).
 
     The history records the total ("loss") and both parts ("recon", "kl"). Pictures decode the mean mu, so they
-    show the model, not the random draw.
+    show the model, not the random draw. mixed_precision: as in train_ae.
     """
     minutes, epochs = _limits("vae", minutes, epochs)
     device = torch.device(device) if device is not None else pick_device()
@@ -255,13 +298,13 @@ def train_vae(model, images: torch.Tensor, minutes: float | None = None, epochs:
     watch = _watch_roofs(images, watch, seed)
     watch_x = to_float(watch.to(device))
     opt = torch.optim.Adam(model.parameters(), lr=lr)
+    precision = _Precision(_use_mixed_precision(mixed_precision, device))
 
     def step(x):
-        copy, mu, logvar = model(x)
-        total, rec, kl = vae_loss(copy, x, mu, logvar, beta)
-        opt.zero_grad(set_to_none=True)
-        total.backward()
-        opt.step()
+        with precision.forward():
+            copy, mu, logvar = model(x)
+        total, rec, kl = vae_loss(copy.float(), x, mu.float(), logvar.float(), beta)
+        precision.step(total, opt)
         return {"loss": total.item(), "recon": rec.item(), "kl": kl.item()}
 
     @torch.no_grad()
@@ -272,7 +315,7 @@ def train_vae(model, images: torch.Tensor, minutes: float | None = None, epochs:
         return out
 
     hist = History("vae", _base_settings("vae", images, minutes, epochs, batch_size, seed, device, lr=lr,
-                                         beta=float(beta), model=model.settings(),
+                                         beta=float(beta), mixed_precision=precision.on, model=model.settings(),
                                          parameters=count_parameters(model)),
                    {"loss": [], "recon": [], "kl": []}, watch)
     _run(hist, step, picture, images, minutes=minutes, epochs=epochs, batch_size=batch_size, seed=seed,

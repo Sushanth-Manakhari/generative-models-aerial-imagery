@@ -152,7 +152,7 @@ Your prompt now starts with `(.venv)`. From there:
 | Leave the environment | `deactivate` |
 
 **What a good test run looks like.** The quick tests end with a line like
-`164 passed, 1 skipped, 50 deselected, 6 warnings`, and all tests with `214 passed, 1 skipped, 6 warnings` (the
+`167 passed, 1 skipped, 50 deselected, 6 warnings`, and all tests with `217 passed, 1 skipped, 6 warnings` (the
 counts change as tests are added, and the number of warnings can differ by computer). In the quick run,
 `deselected` counts the pack builder's tests, which only the full run includes. All of this is expected:
 

@@ -33,7 +33,7 @@ from .viz import morph_images
 
 __all__ = ["RoofApp", "choose_roofs", "build_page", "launch"]
 
-SHOW_PX = 256       # roofs are 64 px; the page shows them 4 times larger, keeping the pixels square
+SHOW_PX = 128       # roofs are 64 px; shown twice as large (G4.9: at 4 times the blur looked worse than it is)
 MORPH_STEPS = 11    # A to B in steps of 0.1
 
 
