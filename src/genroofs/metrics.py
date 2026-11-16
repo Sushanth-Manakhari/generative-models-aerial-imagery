@@ -8,7 +8,7 @@ import torch
 from .data import to_float
 
 __all__ = ["psnr", "reconstruction_errors", "strangest", "unusual_score_auc", "sample_spread", "near_duplicates",
-           "nearest_real"]
+           "nearest_real", "sharpness"]
 
 
 def _as_float(images: torch.Tensor) -> torch.Tensor:
@@ -159,3 +159,16 @@ def nearest_real(fakes: torch.Tensor, train_images: torch.Tensor, chunk: int = 2
         best_d = torch.where(better, d_min, best_d)
         best_i = torch.where(better, i_min + start, best_i)
     return best_i.cpu(), best_d.cpu()
+
+
+def sharpness(images: torch.Tensor) -> float:
+    """Average change between neighbouring pixels, across and down, in the -1..1 scale. Blur lowers it; sharp
+    edges, fine texture and noise raise it. Only compare pictures of the same size: divide by the same measure
+    on real photos to read "1.0 = as sharp as the photos". A high value is not proof of truth: an enlarger can
+    raise it with detail it made up."""
+    x = _as_float(images)
+    if x.dim() == 3:
+        x = x.unsqueeze(0)
+    across = (x[..., :, 1:] - x[..., :, :-1]).abs().mean()
+    down = (x[..., 1:, :] - x[..., :-1, :]).abs().mean()
+    return float((across + down) / 2)

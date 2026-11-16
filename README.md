@@ -3,8 +3,8 @@
 **Guest lecture kit · The Roux Institute at Northeastern University · November 19, 2026, 4:00–5:30 PM**
 Dr. Sushanth Manakhari · hosted by Dr. Umesh Hodeghatta Rao · AAI6640, Module 13: Generative Models
 
-> 🚧 **Work in progress.** The lecture notebooks are added before the lecture. Students receive the final
-> link from the course instructor.
+> **Notebooks:** [`notebooks/`](notebooks/): a five-minute pre-flight check to run before class, and the
+> hands-on lab. Each opens in Google Colab.
 
 ## What you will build
 
@@ -17,6 +17,12 @@ aerial photographs. Four tickets, one per part of Module 13:
 | **ROOF-302** | Variational autoencoder (VAE) | Learns a smooth "roof space": sample brand-new roofs and morph one roof into another. |
 | **ROOF-303** | Generative adversarial network (GAN) | A generator and a critic compete until the fakes look real. You will also break it on purpose (mode collapse). |
 | **ROOF-304** | Ethics | Synthetic images, bias across regions, deepfakes and responsible deployment. |
+
+**Then the modern fixes.** Autoencoders and VAEs blur; GANs are sharper but draw strange shapes. The last part
+runs two free, open enlargers, **Real-ESRGAN** (a GAN) and **SwinIR** (a Swin Transformer), on the same roofs
+and on our models' pictures, and shows what they can and cannot fix: they sharpen detail that is still in a
+picture, and what they add is believable, not necessarily true. Credits and licences:
+[docs/DATA_SOURCES.md](docs/DATA_SOURCES.md#models-used-in-the-lecture).
 
 ## Data, in one paragraph
 
@@ -47,13 +53,15 @@ scripts/setup_windows.ps1    laptop setup for Windows
 scripts/build_roof_pack.py   builds the roof packs from public map services (instructor tool)
 scripts/roof_sources.json    every photo source, its licence and attribution
 packs/                       size and SHA-256 of each roof pack (the zips are on release data-v1)
+                             (ready-made trained models: release models-v1)
 docs/SETUP.md                Colab, Mac and Windows setup, step by step
 docs/DATA_SOURCES.md         sources, licences, privacy rules and known limits of the data
-notebooks/                   lecture notebooks (coming)
+docs/diagrams/               the lecture's diagrams as draw.io files (open at app.diagrams.net)
+notebooks/                   the pre-flight check and the hands-on lab (open in Colab)
 pyproject.toml               package metadata (pip install from this repository)
 ```
 
 ## Licence
 
-Code: MIT ([LICENSE](LICENSE)). Imagery and building outlines stay under their own terms, listed in
-[docs/DATA_SOURCES.md](docs/DATA_SOURCES.md); every roof pack ships with an `ATTRIBUTION.txt`.
+Code: MIT ([LICENSE](LICENSE)). Imagery, building outlines and the two enlargers' weights stay under their own
+terms, listed in [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md); every roof pack ships with an `ATTRIBUTION.txt`.

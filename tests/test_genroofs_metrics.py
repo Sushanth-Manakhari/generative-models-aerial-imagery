@@ -112,3 +112,14 @@ def test_nearest_real_finds_copies():
     assert torch.equal(idx2, idx3) and torch.allclose(dist2, dist3)
     assert (dist2 > 0.01).all()
     assert not math.isinf(dist2.max().item())
+
+
+def test_sharpness_rises_with_edges_and_falls_with_blur():
+    import torch.nn.functional as F
+    flat = torch.full((2, 3, 32, 32), 128, dtype=torch.uint8)
+    assert metrics.sharpness(flat) == 0.0
+    stripes = flat.clone()
+    stripes[..., ::2] = 255
+    blurred = F.avg_pool2d(stripes.float(), 3, stride=1, padding=1).round().to(torch.uint8)
+    assert metrics.sharpness(stripes) > metrics.sharpness(blurred) > 0
+    assert metrics.sharpness(stripes[0]) == pytest.approx(metrics.sharpness(stripes))

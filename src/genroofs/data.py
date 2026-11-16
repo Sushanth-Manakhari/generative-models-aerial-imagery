@@ -37,7 +37,7 @@ from PIL import Image
 from . import __version__
 
 __all__ = ["Roofs", "PackError", "pack_info", "available_packs", "cache_dir", "download_pack", "load_roofs",
-           "attribution", "normalize_angle", "class_slice", "train_test_split", "to_float", "to_bytes", "batches",
+           "load_selected", "attribution", "normalize_angle", "class_slice", "train_test_split", "to_float", "to_bytes", "batches",
            "to_pandas", "MANIFEST_FIELDS", "CLASS_SIZE", "USER_AGENT"]
 
 REPO = "Sushanth-Manakhari/generative-models-aerial-imagery"
@@ -466,6 +466,24 @@ def load_roofs(name: str = "roofs_maine_2022", size: int = 64, limit: int | None
         mb = roofs.images.numel() / 1e6
         print(f"Loaded {len(roofs.manifest):,} roofs at {size}x{size} from {name} ({mb:,.0f} MB as bytes).")
     return roofs
+
+
+def load_selected(rows: list, name: str = "roofs_maine_2022", size: int | None = None,
+                  cache: str | Path | None = None) -> torch.Tensor:
+    """Decode only these roofs (manifest rows, for example `test.manifest[:4]`) straight from the pack, at the
+    pack's own 128 x 128 unless `size` says otherwise. Quick for a few roofs, such as the sharper originals of the
+    64-pixel class photos, without decoding the whole pack at 128 pixels. Returns uint8 N x 3 x size x size."""
+    info = pack_info(name)
+    size = int(size or info["chip_px"])
+    if not 8 <= size <= int(info["chip_px"]):
+        raise ValueError(f"size must be between 8 and {info['chip_px']} pixels, not {size}.")
+    rows = list(rows)
+    if not rows:
+        raise ValueError("Pass at least one manifest row.")
+    zpath = download_pack(name, cache, quiet=True)
+    with zipfile.ZipFile(zpath) as zf:
+        arr = _decode_all(zf, info["name"], rows, size, quiet=True)
+    return torch.from_numpy(arr)
 
 
 def _groups(manifest: list) -> dict:

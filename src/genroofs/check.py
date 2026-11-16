@@ -14,7 +14,7 @@ from pathlib import Path
 
 REQUIRED = [("torch", "torch"), ("numpy", "numpy"), ("PIL", "Pillow"), ("matplotlib", "matplotlib"),
             ("safetensors", "safetensors"), ("certifi", "certifi")]
-OPTIONAL = [("pandas", "pandas", "to_pandas()")]
+OPTIONAL = [("pandas", "pandas", "to_pandas()"), ("spandrel", "spandrel", "the modern enlargers")]
 MIN_FREE_GB = 1.0
 
 

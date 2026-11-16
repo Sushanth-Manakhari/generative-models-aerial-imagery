@@ -100,3 +100,15 @@ def test_real_or_fake_quiz(capsys):
     exercises.real_or_fake(real, Generator(), n=6, seed=1)
     with pytest.raises(ValueError):
         exercises.real_or_fake(real, Generator(), n=3)
+
+
+def test_copies_matches_the_private_helper_in_batches():
+    from genroofs.exercises import _copies, copies
+    from genroofs.models import RoofAE, RoofVAE
+    imgs = make_squares(10)
+    for model in (RoofAE(latent=8), RoofVAE(latent=8)):
+        torch.manual_seed(0)
+        out = copies(model, imgs, batch_size=4)
+        assert out.shape == imgs.shape and out.dtype == torch.uint8 and not out.requires_grad
+        assert torch.equal(out, _copies(model, imgs))
+    assert copies(RoofAE(latent=8), imgs[:0]).shape[0] == 0

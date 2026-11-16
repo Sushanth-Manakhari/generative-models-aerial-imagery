@@ -298,9 +298,19 @@ def test_load_refuses_files_not_saved_by_genroofs(tmp_path):
 
 # ------------------------------------------------------------------------------------------- pretrained
 
-def test_pretrained_not_published_yet(monkeypatch):
+def test_pretrained_entries_recorded(monkeypatch):
     monkeypatch.setattr(train, "_WEIGHTS_INFO", None)
-    assert train._weights_info() == {}
+    info = train._weights_info()
+    assert set(info) == {"ae", "vae", "gan"}
+    for kind, entry in info.items():
+        assert set(entry) == {"file", "bytes", "sha256"}
+        assert entry["file"].startswith("roofs_") and entry["file"].endswith("_v1.safetensors")
+        assert 1_000_000 < entry["bytes"] < 50_000_000
+        assert len(entry["sha256"]) == 64 and int(entry["sha256"], 16) >= 0
+
+
+def test_pretrained_not_published(monkeypatch):
+    monkeypatch.setattr(train, "_WEIGHTS_INFO", {})
     with pytest.raises(train.WeightsNotPublished, match="not published yet.*train_ae"):
         train.load_pretrained("ae")
     with pytest.raises(ValueError, match="ae, vae, gan"):

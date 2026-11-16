@@ -489,3 +489,17 @@ def test_to_pandas_with_pandas(fake_env):
     _, manifest = data.load_roofs(FAKE_NAME, quiet=True)
     df = data.to_pandas(manifest)
     assert list(df.columns) == list(data.MANIFEST_FIELDS) and len(df) == 48
+
+
+def test_load_selected_decodes_only_the_rows_asked_for(fake_env):
+    images, manifest = fake_env.data.load_roofs(FAKE_NAME, size=64, quiet=True)
+    rows = [manifest[3], manifest[17]]
+    big = fake_env.data.load_selected(rows, FAKE_NAME)
+    assert big.shape == (2, 3, 128, 128) and big.dtype == torch.uint8
+    small = fake_env.data.load_selected(rows, FAKE_NAME, size=64)
+    assert torch.equal(small, images[[3, 17]])
+    assert int(big[1, 0, 2, 2]) == pytest.approx(marker_value(17), abs=3)
+    with pytest.raises(ValueError, match="at least one"):
+        fake_env.data.load_selected([], FAKE_NAME)
+    with pytest.raises(ValueError, match="between 8 and 128"):
+        fake_env.data.load_selected(rows, FAKE_NAME, size=256)
