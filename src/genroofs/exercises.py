@@ -18,8 +18,8 @@ from .train import train_ae, train_gan
 from .utils import set_seed
 from .viz import morph_images, plot_history, show_grid, show_rows
 
-__all__ = ["Result", "bottleneck", "strangest_roofs", "morph_pair", "break_the_gan", "GAN_CHANGES", "Quiz",
-           "real_or_fake"]
+__all__ = ["Result", "copies", "bottleneck", "strangest_roofs", "morph_pair", "break_the_gan", "GAN_CHANGES",
+           "Quiz", "real_or_fake"]
 
 
 class Result:
@@ -46,6 +46,15 @@ def _copies(model, images: torch.Tensor) -> torch.Tensor:
         return to_bytes(out).cpu()
     finally:
         model.train(was_training)
+
+
+@torch.no_grad()
+def copies(model, images: torch.Tensor, batch_size: int = 256) -> torch.Tensor:
+    """The model's copies of `images` as uint8 pictures on the CPU: the autoencoder's output, or the VAE's copy
+    decoded from its mean. Works in batches without keeping gradients, so 1,000 roofs take little memory."""
+    if len(images) == 0:
+        return images.clone()
+    return torch.cat([_copies(model, images[i:i + batch_size]) for i in range(0, len(images), batch_size)])
 
 
 def _mean_psnr(model, images: torch.Tensor) -> float:

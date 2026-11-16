@@ -37,6 +37,10 @@ Everything here is free. Nothing asks for a token, key or paid account.
    !python -m genroofs.check
    ```
 
+The lecture notebooks install the package with the `[modern]` extra
+(`"genroofs[modern] @ git+..."`), which adds spandrel for the two modern enlargers; their weight files (about
+67 MB each) download and are checked the first time a notebook loads them.
+
 The roof packs download into `/content/genroofs_data` the first time a notebook loads them (about 25 seconds),
 and they are checked against their SHA-256 before use. A Colab session forgets them when it ends; the next
 session downloads them again.
@@ -149,15 +153,16 @@ Your prompt now starts with `(.venv)`. From there:
 | Run every test, including the pack builder's (a few minutes) | `python -m pytest -q tests` |
 | Run the self-check again | `python -m genroofs.check` |
 | Add pandas (optional, for `to_pandas()`) | `python -m pip install pandas` |
+| Add the modern enlargers (optional, Real-ESRGAN and SwinIR) | `python -m pip install "spandrel>=0.4.2,<0.5"` |
 | Leave the environment | `deactivate` |
 
 **What a good test run looks like.** The quick tests end with a line like
-`167 passed, 1 skipped, 50 deselected, 6 warnings`, and all tests with `217 passed, 1 skipped, 6 warnings` (the
+`178 passed, 3 skipped, 50 deselected, 6 warnings`, and all tests with `228 passed, 3 skipped, 6 warnings` (the
 counts change as tests are added, and the number of warnings can differ by computer). In the quick run,
 `deselected` counts the pack builder's tests, which only the full run includes. All of this is expected:
 
-- **1 skipped:** the test for the optional pandas extra is skipped when pandas is not installed. After
-  `python -m pip install pandas` it runs too.
+- **3 skipped:** the test for the optional pandas extra, and two tests for the optional modern enlargers, are
+  skipped when pandas and spandrel are not installed. After installing them (the table above) they run too.
 - **Warnings:** each says `FigureCanvasAgg is non-interactive, and thus cannot be shown`. The tests draw
   pictures off-screen, where there is no window to show them in. They are harmless.
 
@@ -255,8 +260,9 @@ This needs no activation step and no change to Windows' script policy:
 | Run every test, including the pack builder's (a few minutes) | `.venv\Scripts\python.exe -m pytest -q tests` |
 | Run the self-check again | `.venv\Scripts\python.exe -m genroofs.check` |
 | Add pandas (optional, for `to_pandas()`) | `.venv\Scripts\python.exe -m pip install pandas` |
+| Add the modern enlargers (optional, Real-ESRGAN and SwinIR) | `.venv\Scripts\python.exe -m pip install "spandrel>=0.4.2,<0.5"` |
 
-The test results should look like the Mac's in 2.5: `passed`, `1 skipped` and a few warnings are expected;
+The test results should look like the Mac's in 2.5: `passed`, `3 skipped` and a few warnings are expected;
 `failed` or `error` is not.
 
 ---
@@ -268,6 +274,7 @@ The test results should look like the Mac's in 2.5: `passed`, `1 skipped` and a 
 | `Python` | The Python inside `.venv` | Below 3.10: install a newer Python, delete `.venv`, run the setup script again |
 | `torch` ... `certifi` | The packages the lab needs | `MISSING`: run the setup script again |
 | `pandas` | Optional extra for `to_pandas()` | Nothing to fix; `not installed` only means that extra is unavailable |
+| `spandrel` | Optional extra for the modern enlargers (Real-ESRGAN and SwinIR) | Nothing to fix; the lecture notebooks install it on Colab |
 | `Device` | Where training runs: `cuda` (NVIDIA GPU), `mps` (Apple GPU) or `cpu` | Nothing to fix; `cpu` is just slower |
 | `Cache` | Where the roof packs are kept, and the free disk space there | Under 1 GB free: free some space, or set `GENROOFS_DATA` (below) |
 | `Release` | Whether the roof packs on GitHub can be reached | `did NOT answer`: check the internet connection (see Troubleshooting) |

@@ -1,1 +1,17 @@
-{}
+{
+ "ae": {
+  "file": "roofs_ae_v1.safetensors",
+  "bytes": 9733652,
+  "sha256": "09419d4a377a5d5bd469adcb5294edf875743ecc297e36fa82b38319c3ddf8d4"
+ },
+ "vae": {
+  "file": "roofs_vae_v1.safetensors",
+  "bytes": 11831372,
+  "sha256": "b4a2e9c7f8c51dd0c911a86f47114763369aa4f5fcbc2f197db93953209731ef"
+ },
+ "gan": {
+  "file": "roofs_gan_generator_v1.safetensors",
+  "bytes": 6079380,
+  "sha256": "1ba9bdb24daa59b81002aa2b69c940863908a19e1d1f06249e04e2818e235816"
+ }
+}

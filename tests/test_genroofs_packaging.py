@@ -30,7 +30,8 @@ def test_metadata():
     assert project["requires-python"] == ">=3.10"
     assert pyproject()["tool"]["setuptools"]["dynamic"]["version"] == {"attr": "genroofs.__version__"}
     assert re.fullmatch(r"\d+\.\d+\.\d+(\.dev\d+)?", genroofs.__version__)
-    assert set(project["optional-dependencies"]) == {"pandas", "dev"}
+    assert set(project["optional-dependencies"]) == {"pandas", "modern", "dev"}
+    assert project["optional-dependencies"]["modern"] == ["spandrel>=0.4.2,<0.5"]
     everything = project["dependencies"] + [d for deps in project["optional-dependencies"].values() for d in deps]
     assert not any(name in d for d in everything for name in ("gradio", "ipywidgets")), "the explorer needs neither"
 
