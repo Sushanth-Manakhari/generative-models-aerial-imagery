@@ -104,26 +104,31 @@ Orthoimagery – South Portland 2022.*
 
 ## Models used in the lecture
 
-The modern-fixes part loads two free, open enlargers through `genroofs.modern`. Each notebook downloads the
-official weight file from the project's own GitHub release (about 67 MB each), checks its size and SHA-256
-against the values recorded in `genroofs.modern.UPSCALERS`, and opens it with PyTorch's weights-only loader, so
-the file can hold only numbers. They are loaded through [spandrel](https://github.com/chaiNNer-org/spandrel)
-(MIT). Nothing is redistributed by this repository.
+The modern-fixes part loads two free, open enlargers and one better autoencoder through `genroofs.modern`. For
+each enlarger the notebook downloads the official weight file from the project's own GitHub release (about 67 MB
+each), checks its size and SHA-256 against the values recorded in `genroofs.modern.UPSCALERS`, and opens it with
+PyTorch's weights-only loader, so the file can hold only numbers. They are loaded through
+[spandrel](https://github.com/chaiNNer-org/spandrel) (MIT). Nothing is redistributed by this repository.
 
 | Model | Authors and paper | Licence | Weight file and source |
 |---|---|---|---|
 | Real-ESRGAN x4plus | Xintao Wang, Liangbin Xie, Chao Dong, Ying Shan, *Real-ESRGAN: Training Real-World Blind Super-Resolution with Pure Synthetic Data*, ICCV Workshops 2021 | BSD-3-Clause, © 2021 Xintao Wang | `RealESRGAN_x4plus.pth`, release v0.1.0 of [xinntao/Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN) |
 | SwinIR-M, real-world x4 | Jingyun Liang, Jiezhang Cao, Guolei Sun, Kai Zhang, Luc Van Gool, Radu Timofte, *SwinIR: Image Restoration Using Swin Transformer*, ICCV Workshops 2021 | Apache-2.0, © 2021 SwinIR Authors | `003_realSR_BSRGAN_DFO_s64w8_SwinIR-M_x4_GAN.pth`, release v0.0 of [JingyunLiang/SwinIR](https://github.com/JingyunLiang/SwinIR) |
+| Stable Diffusion's autoencoder (`sd-vae-ft-mse`) | Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, Björn Ommer, *High-Resolution Image Synthesis with Latent Diffusion Models*, CVPR 2022; fine-tuned by Stability AI | MIT | `diffusion_pytorch_model.safetensors` from [stabilityai/sd-vae-ft-mse](https://huggingface.co/stabilityai/sd-vae-ft-mse), revision `31f26fdeee1355a5c34592e401dd41e45d25a493` |
+
+Stable Diffusion's autoencoder (about 335 MB) is downloaded from Hugging Face at that one fixed revision through
+[diffusers](https://github.com/huggingface/diffusers) (Apache-2.0), and only as a `.safetensors` file, a format
+that holds numbers and never code.
 
 **Ready-made course models.** Release `models-v1` of this repository holds weights for the course's own
 autoencoder, VAE and GAN generator, trained with the class recipes on `roofs_maine_2022` (release `data-v1`),
 leaving out the 1,000 class test roofs. They are `.safetensors` files (numbers only) and are checked against
 their SHA-256 like the packs.
 
-**On the lecture slides only.** The instructor's slides also show pictures made with models from the Stable
-Diffusion family (Stable Diffusion v1.5 under CreativeML OpenRAIL-M; its x4 upscaler under CreativeML Open
-RAIL++-M; its `sd-vae-ft-mse` autoencoder under MIT; ControlNet Tile under OpenRAIL), credited on each slide.
-Students do not download or run them.
+**On the lecture slides only.** The instructor's slides also show pictures made with other models from the
+Stable Diffusion family (Stable Diffusion v1.5 under CreativeML OpenRAIL-M; its x4
+upscaler under CreativeML Open RAIL++-M; ControlNet Tile under OpenRAIL), credited on each slide. Students do not
+download or run them.
 
 ## What the roof packs contain, and what they never contain
 

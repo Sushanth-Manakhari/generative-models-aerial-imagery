@@ -127,3 +127,66 @@ def test_show_big_returns_html_outside_a_notebook(monkeypatch):
     monkeypatch.setattr(builtins, "__import__", no_ipython)
     page = modern.show_big({"a": torch.zeros(1, 3, 16, 16, dtype=torch.uint8)}, px=32)
     assert page.count("<img ") == 1
+
+
+# ------------------------------------------------------------------------------- Stable Diffusion's autoencoder
+
+def _tiny_sd_autoencoder():
+    diffusers = pytest.importorskip("diffusers")
+    torch.manual_seed(0)
+    return diffusers.AutoencoderKL(block_out_channels=[32, 64, 64, 64], in_channels=3, out_channels=3,
+                                   latent_channels=4, down_block_types=["DownEncoderBlock2D"] * 4,
+                                   up_block_types=["UpDecoderBlock2D"] * 4, norm_num_groups=32)
+
+
+def test_sd_autoencoder_is_pinned_and_credited():
+    info = modern.SD_AUTOENCODER
+    assert info["repo"] == "stabilityai/sd-vae-ft-mse"
+    assert re.fullmatch(r"[0-9a-f]{40}", info["revision"])
+    assert info["licence"] == "MIT"
+    for name in ("sd-autoencoder", "SD VAE", "sd_vae"):
+        line = modern.credit(name)
+        assert "MIT" in line and "CVPR 2022" in line and info["repo"] in line
+    assert modern.latent_numbers(128) == 1024 and modern.latent_numbers(64) == 256
+    with pytest.raises(ValueError, match="divisible by 8"):
+        modern.latent_numbers(100)
+
+
+def test_load_sd_autoencoder_asks_for_one_revision_and_safetensors_only(monkeypatch, capsys):
+    diffusers = pytest.importorskip("diffusers")
+    seen = {}
+
+    def fake_from_pretrained(repo, **kw):
+        seen.update(repo=repo, **kw)
+        return _tiny_sd_autoencoder()
+
+    monkeypatch.setattr(diffusers.AutoencoderKL, "from_pretrained", staticmethod(fake_from_pretrained))
+    model = modern.load_sd_autoencoder(device="cpu")
+    assert seen == {"repo": "stabilityai/sd-vae-ft-mse", "revision": modern.SD_AUTOENCODER["revision"],
+                    "use_safetensors": True}
+    assert not model.training
+    assert "MIT" in capsys.readouterr().out
+
+
+def test_sd_copies_keep_size_and_type():
+    model = _tiny_sd_autoencoder().eval()
+    roofs = torch.randint(0, 256, (3, 3, 32, 32), dtype=torch.uint8)
+    copies = modern.sd_copies(model, roofs, batch_size=2)
+    assert copies.shape == roofs.shape and copies.dtype == torch.uint8
+    one = modern.sd_copies(model, roofs[0].float() / 127.5 - 1)            # one roof, floats in -1..1
+    assert one.shape == (1, 3, 32, 32)
+    with pytest.raises(ValueError, match="divisible by 8"):
+        modern.sd_copies(model, torch.zeros(1, 3, 36, 36, dtype=torch.uint8))
+
+
+def test_a_missing_diffusers_says_how_to_install_it(monkeypatch):
+    real_import = builtins.__import__
+
+    def no_diffusers(name, *args, **kwargs):
+        if name == "diffusers":
+            raise ModuleNotFoundError("No module named 'diffusers'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", no_diffusers)
+    with pytest.raises(ImportError, match=r"\[modern\].*diffusers"):
+        modern.load_sd_autoencoder()

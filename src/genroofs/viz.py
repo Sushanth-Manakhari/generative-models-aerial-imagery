@@ -10,8 +10,8 @@ import torch
 
 from .data import to_bytes, to_float
 
-__all__ = ["show_grid", "show_rows", "show_pairs", "morph_images", "morph", "latent_walk_images", "latent_walk",
-           "plot_history", "show_snapshots"]
+__all__ = ["show_grid", "show_rows", "show_pairs", "morph_images", "morph", "busiest_numbers", "latent_walk_images",
+           "latent_walk", "plot_history", "show_snapshots"]
 
 
 def _plt():
@@ -141,9 +141,33 @@ def morph(model, roof_a, roof_b, steps: int = 8, title: str | None = None, show:
 
 
 @torch.no_grad()
-def latent_walk_images(model, roof=None, dims: tuple = (0, 1), steps: int = 7, span: float = 2.5) -> torch.Tensor:
+def busiest_numbers(model, roof=None, span: float = 2.5, k: int = 2) -> tuple:
+    """The k latent numbers that change the decoded picture most when moved by +/- span around a starting point.
+
+    Many of a VAE's 128 numbers end up doing almost nothing (the KL term switches them off), so a walk along two
+    arbitrary numbers can show 49 near-identical pictures. Walking along the busiest ones shows what the space holds.
+    """
+    was_training = model.training
+    model.eval()
+    try:
+        dev = _device(model)
+        base = (torch.zeros(1, model.latent, device=dev) if roof is None
+                else _encode(model, _model_input(roof, dev)))
+        eye = torch.eye(model.latent, device=dev) * span
+        plus, minus = model.decode(base + eye), model.decode(base - eye)
+        change = (plus - minus).abs().flatten(1).mean(1)
+        return tuple(int(i) for i in torch.topk(change, k).indices.sort().values)
+    finally:
+        model.train(was_training)
+
+
+@torch.no_grad()
+def latent_walk_images(model, roof=None, dims: tuple | None = None, steps: int = 7, span: float = 2.5) -> torch.Tensor:
     """Decode a steps x steps grid: two latent numbers move from -span to +span around a starting point
-    (the roof's latent point, or the centre of the space when roof is None)."""
+    (the roof's latent point, or the centre of the space when roof is None). dims=None picks the two numbers
+    that change the picture most (busiest_numbers)."""
+    if dims is None:
+        dims = busiest_numbers(model, roof, span)
     was_training = model.training
     model.eval()
     try:
@@ -159,8 +183,11 @@ def latent_walk_images(model, roof=None, dims: tuple = (0, 1), steps: int = 7, s
         model.train(was_training)
 
 
-def latent_walk(model, roof=None, dims: tuple = (0, 1), steps: int = 7, span: float = 2.5, show: bool = True):
-    """Show a latent walk: down the rows latent number dims[0] changes, across the columns dims[1] changes."""
+def latent_walk(model, roof=None, dims: tuple | None = None, steps: int = 7, span: float = 2.5, show: bool = True):
+    """Show a latent walk: down the rows latent number dims[0] changes, across the columns dims[1] changes.
+    dims=None walks along the two numbers that change the picture most."""
+    if dims is None:
+        dims = busiest_numbers(model, roof, span)
     images = latent_walk_images(model, roof, dims, steps, span)
     return show_grid(images, ncol=steps, size=1.2, show=show,
                      title=f"Latent walk: number {dims[0]} changes down the rows, number {dims[1]} across "
@@ -204,11 +231,16 @@ def plot_history(history, show: bool = True):
     return _finish(fig, show)
 
 
-def show_snapshots(history, show: bool = True):
-    """The same roofs (or, for the GAN, the same noise vectors) pictured as training went on."""
+def show_snapshots(history, show: bool = True, include_start: bool = False):
+    """The same roofs (or, for the GAN, the same noise vectors) pictured as training went on.
+
+    The picture at step 0 (before any training) is a flat grey square, so it is left out unless include_start=True.
+    """
     rows = {}
     if history.kind in ("ae", "vae"):
         rows["original"] = history.watch
     for step, images in history.snapshots:
+        if step == 0 and not include_start:
+            continue
         rows[f"step {step}"] = images
     return show_rows(rows, title=f"{history.kind.upper()} pictures during training", size=1.2, show=show)

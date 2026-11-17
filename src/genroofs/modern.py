@@ -15,6 +15,11 @@ through spandrel (MIT), the optional extra `modern`:  pip install "genroofs[mode
 
 An enlarger sharpens detail that is still in the picture; it cannot bring back detail a model threw away, and what
 it adds is believable, not necessarily true.
+
+The fix for blur is a better autoencoder. Stable Diffusion's own (`stabilityai/sd-vae-ft-mse`, MIT licence) keeps a
+grid of numbers instead of one list, was scored on "does it look the same" and "does it look real" as well as pixel
+by pixel, and learned from millions of photos. It loads through diffusers (Apache-2.0), also in the `modern` extra,
+from one fixed revision and only from .safetensors files, which hold numbers and never code.
 """
 import base64
 import html as _html
@@ -29,8 +34,9 @@ from PIL import Image
 from .data import cache_dir, fetch_checked
 from .utils import pick_device
 
-__all__ = ["UPSCALERS", "available_upscalers", "upscaler_info", "credit", "fetch_upscaler", "load_upscaler",
-           "enlarge", "stretch", "big_page", "show_big"]
+__all__ = ["UPSCALERS", "SD_AUTOENCODER", "available_upscalers", "upscaler_info", "credit", "fetch_upscaler",
+           "load_upscaler", "enlarge", "stretch", "load_sd_autoencoder", "sd_copies", "latent_numbers", "big_page",
+           "show_big"]
 
 UPSCALERS = {
     "realesrgan": {
@@ -61,6 +67,18 @@ UPSCALERS = {
 }
 SCALE = 4
 
+SD_AUTOENCODER = {
+    "title": "Stable Diffusion's autoencoder (sd-vae-ft-mse)",
+    "kind": "an autoencoder trained with a \"looks real\" critic",
+    "repo": "stabilityai/sd-vae-ft-mse",
+    "revision": "31f26fdeee1355a5c34592e401dd41e45d25a493",
+    "licence": "MIT",
+    "copyright": "Stability AI",
+    "paper": "Rombach, Blattmann, Lorenz, Esser and Ommer, Latent Diffusion Models, CVPR 2022",
+    "megabytes": 335,
+}
+_SD_NAMES = ("sdautoencoder", "sdvae", "sdvaeftmse", "stablediffusion")
+
 
 def available_upscalers() -> list:
     return list(UPSCALERS)
@@ -74,7 +92,13 @@ def upscaler_info(name: str) -> dict:
 
 
 def credit(name: str) -> str:
-    """One line naming the model, its authors' paper, its licence and copyright, as the licences ask."""
+    """One line naming the model, its authors' paper, its licence and copyright, as the licences ask.
+    Takes an enlarger's name or "sd-autoencoder"."""
+    key = str(name).lower().replace("-", "").replace("_", "").replace(" ", "")
+    if key in _SD_NAMES:
+        info = SD_AUTOENCODER
+        return (f"{info['title']} ({info['kind']}) · {info['paper']} · {info['licence']}, {info['copyright']} · "
+                f"huggingface.co/{info['repo']}")
     info = upscaler_info(name)
     return f"{info['title']} ({info['kind']}) · {info['paper']} · {info['licence']}, {info['copyright']}"
 
@@ -150,6 +174,54 @@ def stretch(images, scale: int = SCALE) -> torch.Tensor:
     images = _as_batch(images)
     big = F.interpolate(images.float(), scale_factor=scale, mode="bicubic", align_corners=False)
     return big.clamp(0, 255).round().to(torch.uint8)
+
+
+def _diffusers():
+    try:
+        import diffusers
+    except ImportError:
+        raise ImportError("Stable Diffusion's autoencoder needs the optional package diffusers. On Colab, install "
+                          "genroofs with the [modern] extra (the notebook's first cell does this); on a laptop, inside "
+                          "the project's .venv:  pip install \"diffusers>=0.30,<1\"") from None
+    return diffusers
+
+
+def load_sd_autoencoder(device=None, quiet: bool = False):
+    """Download (once, about 335 MB) and load Stable Diffusion's autoencoder from Hugging Face, at one fixed
+    revision and only from .safetensors files (numbers, never code). Use it through `sd_copies`."""
+    diffusers = _diffusers()
+    info = SD_AUTOENCODER
+    model = diffusers.AutoencoderKL.from_pretrained(info["repo"], revision=info["revision"], use_safetensors=True)
+    model = model.eval().to(torch.device(device) if device is not None else pick_device())
+    if not quiet:
+        print(credit("sd-autoencoder"))
+    return model
+
+
+def latent_numbers(size: int) -> int:
+    """How many numbers Stable Diffusion's autoencoder keeps for a size x size picture: a grid of 4 channels,
+    each size/8 x size/8 (1,024 for a 128-pixel roof). Our autoencoder keeps 128 for a 64-pixel roof."""
+    if size % 8:
+        raise ValueError(f"Stable Diffusion's autoencoder needs a picture size divisible by 8, not {size}.")
+    return 4 * (size // 8) ** 2
+
+
+@torch.no_grad()
+def sd_copies(model, images, batch_size: int = 8) -> torch.Tensor:
+    """Copy roofs through Stable Diffusion's autoencoder (encode to its grid of numbers, decode back):
+    uint8 N x 3 x H x W -> uint8 N x 3 x H x W, with H and W divisible by 8. Also takes floats in -1..1."""
+    images = _as_batch(images)
+    if images.shape[-1] % 8 or images.shape[-2] % 8:
+        raise ValueError(f"Stable Diffusion's autoencoder needs sizes divisible by 8, got {tuple(images.shape[-2:])}.")
+    device = next(model.parameters()).device
+    dtype = next(model.parameters()).dtype
+    out = []
+    for i in range(0, len(images), batch_size):
+        x = (images[i:i + batch_size].to(device).float() / 127.5 - 1).to(dtype)
+        latent = model.encode(x).latent_dist.mode()
+        y = model.decode(latent).sample.float()
+        out.append(((y.clamp(-1, 1) + 1) * 127.5).round().to(torch.uint8).cpu())
+    return torch.cat(out)
 
 
 def _uri(img: torch.Tensor) -> str:

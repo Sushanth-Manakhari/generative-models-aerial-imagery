@@ -59,6 +59,19 @@ def test_latent_walk():
     assert len(image_axes(viz.latent_walk(vae, steps=3, show=False))) == 9
 
 
+def test_busiest_numbers_pick_the_numbers_that_matter():
+    import torch
+    vae = RoofVAE(latent=8).eval()
+    mask = torch.zeros(8)
+    mask[[2, 5]] = 1.0
+    with torch.no_grad():                       # switch off every latent number except 2 and 5
+        vae.from_z.weight.mul_(mask)
+    assert viz.busiest_numbers(vae) == (2, 5)
+    assert viz.busiest_numbers(vae, roof=make_squares(1)[0]) == (2, 5)
+    fig = viz.latent_walk(vae, steps=3, show=False)
+    assert "number 2" in fig._suptitle.get_text() and "number 5" in fig._suptitle.get_text()
+
+
 def test_history_pictures():
     from genroofs.models import Discriminator, Generator
     x = make_squares(32)
@@ -71,5 +84,8 @@ def test_history_pictures():
         fig = viz.plot_history(h, show=False)
         assert len(fig.axes) == panels[h.kind]
         snaps = viz.show_snapshots(h, show=False)
-        rows = len(h.snapshots) + (1 if h.kind != "gan" else 0)
-        assert len(image_axes(snaps)) == rows * len(h.watch)
+        assert h.snapshots[0][0] == 0           # the grey step-0 picture is kept in the history ...
+        rows = len(h.snapshots) - 1 + (1 if h.kind != "gan" else 0)
+        assert len(image_axes(snaps)) == rows * len(h.watch)   # ... but not shown
+        full = viz.show_snapshots(h, show=False, include_start=True)
+        assert len(image_axes(full)) == (rows + 1) * len(h.watch)
