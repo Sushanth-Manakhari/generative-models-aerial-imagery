@@ -21,8 +21,9 @@ aerial photographs. Four tickets, one per part of Module 13:
 **Then the modern fixes.** Autoencoders and VAEs blur; GANs are sharper but draw strange shapes. The last part
 runs two free, open enlargers, **Real-ESRGAN** (a GAN) and **SwinIR** (a Swin Transformer), on the same roofs
 and on our models' pictures, and shows what they can and cannot fix: they sharpen detail that is still in a
-picture, and what they add is believable, not necessarily true. Credits and licences:
-[docs/DATA_SOURCES.md](docs/DATA_SOURCES.md#models-used-in-the-lecture).
+picture, and what they add is believable, not necessarily true. Then it runs a better autoencoder, **Stable
+Diffusion's own** (MIT licence), whose copies of the same roofs are sharp, to show that the real fix for blur is a
+better model. Credits and licences: [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md#models-used-in-the-lecture).
 
 ## Data, in one paragraph
 
