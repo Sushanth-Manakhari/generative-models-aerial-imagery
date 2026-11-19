@@ -179,6 +179,16 @@ def test_sd_copies_keep_size_and_type():
         modern.sd_copies(model, torch.zeros(1, 3, 36, 36, dtype=torch.uint8))
 
 
+def test_sd_numbers_are_the_flattened_grid():
+    model = _tiny_sd_autoencoder().eval()
+    roofs = torch.randint(0, 256, (3, 3, 32, 32), dtype=torch.uint8)
+    z = modern.sd_numbers(model, roofs, batch_size=2)
+    assert z.shape == (3, modern.latent_numbers(32)) and z.dtype == torch.float32 and z.device.type == "cpu"
+    assert torch.allclose(z, modern.sd_numbers(model, roofs, batch_size=2))   # the centre of each range: no randomness
+    with pytest.raises(ValueError, match="divisible by 8"):
+        modern.sd_numbers(model, torch.zeros(1, 3, 36, 36, dtype=torch.uint8))
+
+
 def test_a_missing_diffusers_says_how_to_install_it(monkeypatch):
     real_import = builtins.__import__
 

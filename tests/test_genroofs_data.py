@@ -1,4 +1,5 @@
 """Offline tests for genroofs.data: pack info, cache folder, checked downloads, loading, slices, splits, batches."""
+import importlib.util
 import io
 import json
 import sys
@@ -33,8 +34,9 @@ def test_bundled_pack_info_matches_packs_folder():
 
 
 def test_available_packs_and_unknown_name():
-    assert data.available_packs() == ["roofs_maine_2022", "roofs_us_variety"]
-    with pytest.raises(data.PackError, match="Available packs: roofs_maine_2022, roofs_us_variety"):
+    assert data.available_packs() == ["roofs_maine_2022", "roofs_storm_michael_2018", "roofs_us_variety"]
+    names = "roofs_maine_2022, roofs_storm_michael_2018, roofs_us_variety"
+    with pytest.raises(data.PackError, match=f"Available packs: {names}"):
         data.pack_info("roofs_nowhere")
 
 
@@ -503,3 +505,28 @@ def test_load_selected_decodes_only_the_rows_asked_for(fake_env):
         fake_env.data.load_selected([], FAKE_NAME)
     with pytest.raises(ValueError, match="between 8 and 128"):
         fake_env.data.load_selected(rows, FAKE_NAME, size=256)
+
+
+def test_storm_pack_damage_columns_are_kept(fake_env):
+    """The storm pack adds FEMA's damage level and how it was judged; every other pack keeps the plain manifest."""
+    levels = ["Affected", "none recorded", "Destroyed", "none recorded"]
+    rows = [dict(r, damage=levels[i % 4], assessment="" if i % 2 else "Remote Sensing / Wind")
+            for i, r in enumerate(fake_env.pack.rows)]
+    fake_env.install(build_zip(rows, fake_env.pack.images, manifest_fields=MANIFEST_FIELDS + ["damage", "assessment"]))
+    images, manifest = data.load_roofs(FAKE_NAME, quiet=True, size=16)
+    assert list(manifest[0]) == list(data.MANIFEST_FIELDS + data.LABEL_FIELDS)
+    by_chip = {r["chip_id"]: r for r in rows}
+    assert all(m["damage"] == by_chip[m["chip_id"]]["damage"] for m in manifest)
+    if importlib.util.find_spec("pandas") is not None:        # pandas is optional
+        df = data.to_pandas(manifest)
+        assert list(df.columns) == list(data.MANIFEST_FIELDS + data.LABEL_FIELDS)
+    for banned in ("address", "lat", "latitude", "lon", "longitude", "x", "y", "building_id", "owner"):
+        assert banned not in data.LABEL_FIELDS
+
+
+def test_only_the_two_damage_columns_are_accepted(fake_env):
+    pack = fake_env.pack
+    rows = [dict(r, damage="Affected") for r in pack.rows]
+    fake_env.install(build_zip(rows, pack.images, manifest_fields=MANIFEST_FIELDS + ["damage"]))
+    with pytest.raises(data.PackError, match="unexpected columns"):
+        data.load_roofs(FAKE_NAME, quiet=True)

@@ -37,5 +37,23 @@
     },
     "built": "2026-11-13",
     "docs_updated": "2026-11-13"
+  },
+  "roofs_storm_michael_2018": {
+    "name": "roofs_storm_michael_2018",
+    "file": "roofs_storm_michael_2018.zip",
+    "bytes": 13503691,
+    "sha256": "fce9a937116e4b4d9826cb435cdf44cca1df0c4dbe4f59406297aea6eda7e65f",
+    "chips": 2000,
+    "chip_px": 128,
+    "window_m": 24.0,
+    "per_source": {
+      "fl_michael_mexico_beach": 400,
+      "fl_michael_panama_city": 400,
+      "fl_michael_callaway_parker": 400,
+      "fl_michael_lynn_haven": 400,
+      "fl_michael_marianna": 400
+    },
+    "built": "2026-11-17",
+    "docs_updated": "2026-11-19"
   }
 }
