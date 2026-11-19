@@ -5,11 +5,13 @@
     python scripts/build_roof_pack.py --pack all --trial       # small trial: ~50 roofs per source, for review
     python scripts/build_roof_pack.py --pack train             # training pack, Maine 2022 (~22,000 roofs)
     python scripts/build_roof_pack.py --pack variety           # variety pack, five U.S. regions (~3,000 roofs)
+    python scripts/build_roof_pack.py --pack storm --trial     # storm pack: Florida roofs days after Hurricane Michael,
+                                                               # with FEMA's public damage labels (~2,000 roofs)
 
     --resume   continue a build that stopped (network drop, laptop asleep): nothing is downloaded twice
     --fresh    delete an unfinished build of that pack and start again
     --only tx_round_rock_2021   (with --trial) re-check just some sources; output goes to a separate folder
-    --rezip    refresh README.txt, checksums and the zip of finished packs (no downloads, images unchanged)
+    --rezip    refresh README, ATTRIBUTION, checksums and zip of finished packs (no downloads, same images)
 
 Sources, licences and privacy rules: docs/DATA_SOURCES.md and scripts/roof_sources.json.
 
@@ -35,6 +37,7 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
+import itertools
 import io
 import json
 import math
@@ -61,6 +64,9 @@ SOURCES_FILE = Path(__file__).resolve().with_name("roof_sources.json")
 USER_AGENT = "roof-pack-builder/0.2 (educational, non-commercial; generative-models guest lecture)"
 MANIFEST_FIELDS = ["chip_id", "file", "source", "region", "place", "year",
                    "area_m2", "long_m", "short_m", "angle_deg", "use"]
+LABEL_FIELDS = ["damage", "assessment"]    # storm pack only: FEMA's damage level for the home, and how it was judged
+DAMAGE_ORDER = ["none recorded", "No Damage", "Affected", "Minor", "Major", "Destroyed"]
+DAMAGED = set(DAMAGE_ORDER[2:])
 STATE_FILE = "_build_state.json"          # local bookkeeping for --resume; never packed or published
 EARTH_R = 6378137.0                       # Web Mercator sphere radius, metres
 
@@ -102,6 +108,11 @@ class Settings:
     trial: bool = False
     review: bool = False            # trial only: also save chips with the outlines drawn on, for checking
     zip_dir: Path | None = None     # where the finished zip goes (None: no zip)
+    labels: bool = False            # storm pack: add FEMA damage labels (two extra manifest columns)
+
+    @property
+    def fields(self) -> list:        # manifest.csv columns for this pack
+        return MANIFEST_FIELDS + LABEL_FIELDS if self.labels else MANIFEST_FIELDS
 
     @property
     def fetch_res(self) -> float:   # metres per pixel requested from the server
@@ -111,7 +122,7 @@ class Settings:
         keys = ("pack", "name", "target", "seed", "window_m", "chip_px", "block_m", "margin_m", "min_area_m2",
                 "max_area_m2", "max_long_m", "min_short_m", "min_homes_per_block", "max_per_block",
                 "coverage_min", "align", "max_shift_m", "snap_m", "snap_clarity", "fit_min", "block_fit_min",
-                "trial")
+                "trial", "labels")
         return json.dumps({k: getattr(self, k) for k in keys}, sort_keys=True)
 
 
@@ -145,7 +156,8 @@ def _to_rgb(img: Image.Image) -> Image.Image:
 
 def http_get(url: str, params: dict | None, want: str = "json", tries: int = 5, timeout: int = 90,
              missing_ok: bool = False):
-    """GET url?params. want='json' -> dict, want='image' -> RGB PIL image. missing_ok: HTTP 404 -> None."""
+    """GET url?params. want='json' -> dict, want='text' -> str, want='image' -> RGB PIL image.
+    missing_ok: HTTP 404 -> None."""
     full = url + ("?" + urllib.parse.urlencode(params) if params else "")
     delay, last = 2.0, None
     for attempt in range(1, tries + 1):
@@ -154,6 +166,8 @@ def http_get(url: str, params: dict | None, want: str = "json", tries: int = 5, 
             with urllib.request.urlopen(req, timeout=timeout, context=_SSL) as resp:
                 body = resp.read()
                 ctype = resp.headers.get("Content-Type", "")
+            if want == "text":
+                return body.decode("utf-8", "replace")
             if want == "json":
                 data = json.loads(body.decode("utf-8"))
                 if isinstance(data, dict) and "error" in data:
@@ -206,6 +220,20 @@ def lonlat_to_utm(lon: float, lat: float, zone: int):
 
 def lonlat_to_merc(lon: float, lat: float):
     return EARTH_R * math.radians(lon), EARTH_R * math.log(math.tan(math.pi / 4 + math.radians(lat) / 2))
+
+
+def merc_to_lonlat(x: float, y: float):
+    return math.degrees(x / EARTH_R), merc_y_to_lat(y)
+
+
+def point_in_polygon(x: float, y: float, ring: np.ndarray) -> bool:
+    inside, n = False, len(ring)
+    for i in range(n):
+        x0, y0 = ring[i]
+        x1, y1 = ring[(i + 1) % n]
+        if (y0 > y) != (y1 > y) and x < (x1 - x0) * (y - y0) / (y1 - y0 + 1e-12) + x0:
+            inside = not inside
+    return inside
 
 
 def merc_y_to_lat(y: float) -> float:
@@ -284,6 +312,9 @@ class TileService:
         if self.max_level not in levels:
             raise ServiceError(f"tile level {self.max_level} not offered by {self.url}")
 
+    def tile_url(self, level: int, row: int, col: int) -> str:
+        return f"{self.url}/tile/{level}/{row}/{col}"
+
     def _level_for(self, res_needed: float):
         """Coarsest level that is still at least as sharp as res_needed (never finer than max_level)."""
         lods = sorted((l for l in self.tile_info["lods"] if l["level"] <= self.max_level),
@@ -307,7 +338,7 @@ class TileService:
 
         def get(rc):
             time.sleep(self.tile_pause_s)
-            return rc, self._fetch(f"{self.url}/tile/{level}/{rc[0]}/{rc[1]}")
+            return rc, self._fetch(self.tile_url(level, rc[0], rc[1]))
 
         cells = [(r, c) for r in range(r0, r1 + 1) for c in range(c0, c1 + 1)]
         with ThreadPoolExecutor(max_workers=self.workers) as pool:     # a few at a time, like a map viewer
@@ -321,6 +352,244 @@ class TileService:
         box = (left, top, left + (xmax - xmin) / res, top + (ymax - ymin) / res)
         time.sleep(self.pause_s)
         return mosaic.transform((size_px, size_px), Image.EXTENT, box, resample=Image.BILINEAR)
+
+
+WEB_MERCATOR_TILES = {"origin": {"x": -20037508.342787, "y": 20037508.342787}, "cols": 256, "rows": 256,
+                      "lods": [{"level": z, "resolution": 156543.03392804097 / 2 ** z} for z in range(23)]}
+
+
+class XYZTileService(TileService):
+    """Web Mercator tiles addressed as {z}/{x}/{y} (the usual web-map scheme), e.g. NOAA's storm imagery."""
+
+    def __init__(self, template: str, level: int, **kw):
+        super().__init__(template, level, **kw)
+        self.set_tile_info(WEB_MERCATOR_TILES)
+
+    def info(self) -> dict:
+        return {"tileInfo": self.tile_info}
+
+    def tile_url(self, level: int, row: int, col: int) -> str:
+        return self.url.format(z=level, x=col, y=row)
+
+
+def parse_wmts(xml: str) -> list:
+    """Layers of a WMTS GetCapabilities document: [{"id", "box": (lon0, lat0, lon1, lat1), "template"}]."""
+    out = []
+    for block in re.findall(r"<Layer>(.*?)</Layer>", xml, flags=re.S):
+        ident = re.search(r"<ows:Identifier>\s*([^<\s]+)\s*</ows:Identifier>", block)
+        lo = re.search(r"<ows:LowerCorner>\s*([-\d.]+)\s+([-\d.]+)\s*</ows:LowerCorner>", block)
+        hi = re.search(r"<ows:UpperCorner>\s*([-\d.]+)\s+([-\d.]+)\s*</ows:UpperCorner>", block)
+        tpl = re.search(r'<ResourceURL[^>]*template="([^"]+)"', block)
+        if not (ident and lo and hi and tpl):
+            continue
+        tms = re.search(r"<TileMatrixSet>\s*([^<\s]+)\s*</TileMatrixSet>", block)
+        template = (tpl.group(1).replace("{TileMatrixSet}", tms.group(1) if tms else "GoogleMapsCompatible")
+                    .replace("{Style}", "default").replace("{TileMatrix}", "{z}").replace("{TileCol}", "{x}")
+                    .replace("{TileRow}", "{y}"))
+        out.append({"id": ident.group(1), "box": (float(lo.group(1)), float(lo.group(2)),
+                                                  float(hi.group(1)), float(hi.group(2))), "template": template})
+    return out
+
+
+class NoaaEriService:
+    """NOAA Emergency Response Imagery for one storm (public domain, flown in the days after landfall).
+
+    The storm's page links a WMTS capabilities file; each flight is one tile layer in Web Mercator. For every
+    box asked for, the flight that really has photos there is used: a layer's outline is a rectangle around
+    its flight lines, so several layers can claim a street while only one photographed it. NOAA answers a tile
+    it does not have with a 1 x 1 transparent picture, which becomes 'no photo' here."""
+    wkid = 3857
+    CAPS = re.compile(r"""[^"'\s()<>]*(?:WMTSCapabilities\.xml|tileserver\.php/wmts)""", re.I)
+
+    def __init__(self, page_url: str, level: int, prefixes=(), pause_s: float = 0.3, tile_pause_s: float = 0.02,
+                 timeout: int = 60, get_text=None, fetch=None, min_level: int = 17, known=None):
+        self.page_url, self.level, self.prefixes = page_url, int(level), tuple(prefixes)
+        self.known = list(known or [])    # flights checked by hand: [{"id", "box", "template"}]; no page needed
+        self.min_level = min(int(min_level), self.level)   # coarser zooms may be missing: never ask for them
+        self.pause_s, self.tile_pause_s, self.timeout = pause_s, tile_pause_s, timeout
+        self._get_text = get_text or (lambda u: http_get(u, None, want="text", timeout=timeout))
+        self._fetch = fetch or (lambda u: _real_tile(http_get(u, None, want="image", tries=4, timeout=timeout,
+                                                              missing_ok=True)))
+        self.missions, self.caps_url, self._svc, self._choice = [], None, {}, {}
+
+    def _service(self, mission: dict) -> XYZTileService:
+        if mission["id"] not in self._svc:
+            self._svc[mission["id"]] = XYZTileService(mission["template"], self.level, pause_s=0,
+                                                      tile_pause_s=self.tile_pause_s, timeout=self.timeout,
+                                                      fetch=self._fetch, workers=6)
+        return self._svc[mission["id"]]
+
+    def _find_caps(self) -> str:
+        """The WMTS capabilities address: in the storm page, in its scripts (some pages add the link with
+        JavaScript), or at the two places NOAA's storm pages have used."""
+        page = self._get_text(self.page_url)
+        m = self.CAPS.search(page)
+        if m:
+            return urllib.parse.urljoin(self.page_url, m.group(0))
+        for js in re.findall(r"""<script[^>]+src=["']([^"']+\.js)["']""", page)[:12]:
+            url = urllib.parse.urljoin(self.page_url, js)
+            if urllib.parse.urlparse(url).netloc != urllib.parse.urlparse(self.page_url).netloc:
+                continue
+            try:
+                m = self.CAPS.search(self._get_text(url))
+            except ServiceError:
+                continue
+            if m:
+                return urllib.parse.urljoin(url, m.group(0))
+        for guess in ("services/WMTSCapabilities.xml", "../tilesj/services/tileserver.php/wmts"):
+            url = urllib.parse.urljoin(self.page_url, guess)
+            try:
+                if parse_wmts(self._get_text(url)):
+                    return url
+            except ServiceError:
+                continue
+        raise ServiceError(f"no WMTS link on {self.page_url} or its scripts (NOAA may have changed the page)")
+
+    def info(self) -> dict:
+        if self.known:
+            self.missions = sorted(self.known, key=lambda l: l["id"])
+            self.caps_url = "flights listed in scripts/roof_sources.json"
+            return {"missions": [l["id"] for l in self.missions], "level": self.level, "tile_service": self.caps_url}
+        self.caps_url = self._find_caps()
+        layers = parse_wmts(self._get_text(self.caps_url))
+        self.missions = sorted((l for l in layers if not self.prefixes or l["id"].startswith(self.prefixes)),
+                               key=lambda l: l["id"])
+        if not self.missions:
+            raise ServiceError(f"no flights starting {self.prefixes} in {self.caps_url}")
+        return {"missions": [l["id"] for l in self.missions], "level": self.level, "tile_service": self.caps_url}
+
+    def _candidates(self, bbox) -> list:
+        lon0, lat0 = merc_to_lonlat(bbox[0], bbox[1])
+        lon1, lat1 = merc_to_lonlat(bbox[2], bbox[3])
+
+        def overlap(m):
+            a0, b0, a1, b1 = m["box"]
+            return max(0.0, min(a1, lon1) - max(a0, lon0)) * max(0.0, min(b1, lat1) - max(b0, lat0))
+        return [m for m in sorted(self.missions, key=overlap, reverse=True) if overlap(m) > 0]
+
+    def _export(self, mission: dict, bbox, size_px: int) -> Image.Image:
+        """One flight's picture of the box, fetched at zoom min_level or finer, then shrunk to size_px."""
+        finest_needed = (bbox[2] - bbox[0]) / WEB_MERCATOR_TILES["lods"][self.min_level]["resolution"]
+        fetch_px = max(int(size_px), int(math.ceil(finest_needed)))
+        img = self._service(mission).export(bbox, fetch_px)
+        return img if fetch_px == size_px else img.resize((size_px, size_px), Image.BOX)
+
+    def flight_for(self, bbox):
+        """The flight with the most photo cover over this box (None: no flight photographed it)."""
+        key = tuple(round(v, -1) for v in bbox)
+        if key not in self._choice:
+            best, best_cover = None, 0.0
+            for m in self._candidates(bbox)[:5]:
+                cover = 1.0 - nodata_fraction(self._export(m, bbox, 64))
+                if cover > best_cover:
+                    best, best_cover = m, cover
+                if cover > 0.95:
+                    break
+            self._choice[key] = best
+        return self._choice[key]
+
+    def export(self, bbox, size_px: int) -> Image.Image:
+        if not self.missions:
+            self.info()
+        best = self.flight_for(bbox)
+        time.sleep(self.pause_s)
+        if best is None:
+            return Image.new("RGB", (size_px, size_px), (0, 0, 0))
+        return self._export(best, bbox, size_px)
+
+
+def _real_tile(img):
+    """NOAA's 'no tile here' answer is a tiny transparent picture: treat it as missing."""
+    return None if img is None or min(img.size) <= 4 else img
+
+
+class LabelService:
+    """FEMA's public geospatial damage assessments: one point per assessed building with its damage level.
+    Fields are found by their descriptive names, and coded values (DES, MAJ, ...) are turned into words
+    (Destroyed, Major, ...) using the layer's own code lists."""
+
+    WANT = {"damage": "damage level", "assessment": "assessment type", "event": "event name", "dtype": "damage type"}
+
+    def __init__(self, url: str, wkid: int, event: str, exclude_assessment=(), pause_s: float = 0.3,
+                 tries: int = 5, timeout: int = 90, get_json=None):
+        self.url, self.wkid, self.event, self.exclude = url, wkid, event, tuple(exclude_assessment)
+        self.pause_s = pause_s
+        self._get = get_json or (lambda u, p: http_get(u, p, tries=tries, timeout=timeout))
+        self.fields, self.codes = None, {}
+
+    def info(self) -> dict:
+        layer = self._get(self.url, {"f": "json"})
+        found = {}
+        for f in layer.get("fields", []):
+            alias = str(f.get("alias") or f.get("name", "")).strip().lower()
+            for key, want in self.WANT.items():
+                if key not in found and alias == want:
+                    found[key] = f["name"]
+                    dom = f.get("domain") or {}
+                    self.codes[key] = {str(c["code"]): str(c["name"]) for c in dom.get("codedValues", [])}
+        missing = [k for k in ("damage", "event") if k not in found]
+        if missing:
+            raise ServiceError(f"damage layer lacks fields {missing}: "
+                               f"{[f.get('alias') for f in layer.get('fields', [])]}")
+        self.fields = found
+        return {"fields": found}
+
+    def word(self, key: str, value) -> str:
+        v = "" if value is None else str(value).strip()
+        return self.codes.get(key, {}).get(v, v)
+
+    def where(self) -> str:
+        w = f"{self.fields['event']} = '{self.event}'"
+        if self.exclude and "assessment" in self.fields:
+            names = {n.lower() for n in self.exclude}
+            codes = [c for c, n in self.codes.get("assessment", {}).items() if n.lower() in names]
+            codes += [n for n in self.exclude if n not in codes and not self.codes.get("assessment")]
+            if codes:
+                col = self.fields["assessment"]
+                w += f" AND ({col} IS NULL OR {col} NOT IN ({', '.join(repr(c) for c in codes)}))"
+        return w
+
+    def query(self, env) -> list:
+        """[(x, y, damage word, 'how assessed / damage type')] for the points inside env (work system)."""
+        if self.fields is None:
+            self.info()
+        names = [self.fields[k] for k in ("damage", "assessment", "dtype") if k in self.fields]
+        out, offset = [], 0
+        while True:
+            params = {"where": self.where(), "outFields": ",".join(names), "returnGeometry": "true",
+                      "outSR": self.wkid, "resultOffset": offset, "resultRecordCount": 2000, "f": "json",
+                      "geometry": f"{env[0]},{env[1]},{env[2]},{env[3]}", "geometryType": "esriGeometryEnvelope",
+                      "inSR": self.wkid, "spatialRel": "esriSpatialRelIntersects"}
+            data = self._get(self.url + "/query", params)
+            time.sleep(self.pause_s)
+            feats = data.get("features", [])
+            for f in feats:
+                g, a = f.get("geometry") or {}, f.get("attributes") or {}
+                if "x" in g and "y" in g:
+                    how = " / ".join(w for w in (self.word(k, a.get(self.fields[k]))
+                                                 for k in ("assessment", "dtype") if k in self.fields) if w)
+                    out.append((float(g["x"]), float(g["y"]), self.word("damage", a.get(self.fields["damage"])), how))
+            if not data.get("exceededTransferLimit") or not feats:
+                return out
+            offset += len(feats)
+
+
+def damage_for(ring: np.ndarray, points: list, near: float):
+    """The most severe damage label among the assessment points inside the outline, or within `near` (work units)
+    of it. ('none recorded', '') when no point belongs to this home."""
+    best, kind = None, ""
+    xmin, ymin = ring[:, 0].min() - near, ring[:, 1].min() - near
+    xmax, ymax = ring[:, 0].max() + near, ring[:, 1].max() + near
+    _, c = polygon_area_centroid(ring)
+    for x, y, level, how in points:
+        if not (xmin <= x <= xmax and ymin <= y <= ymax):
+            continue
+        if not (point_in_polygon(x, y, ring) or math.hypot(x - c[0], y - c[1]) <= near):
+            continue
+        rank = DAMAGE_ORDER.index(level) if level in DAMAGE_ORDER else -1
+        if rank >= 0 and (best is None or rank > DAMAGE_ORDER.index(best)):
+            best, kind = level, how
+    return (best, kind) if best is not None else ("none recorded", "")
 
 
 @dataclass
@@ -682,10 +951,19 @@ def make_services(src: dict, cfg: dict, s: Settings):
         img = ImageService(src["url"], int(src["wkid"]), s.pause_s, tries=5, timeout=timeout)
     elif src["kind"] == "tiles":
         img = TileService(src["url"], int(src["level"]), s.pause_s, s.tile_pause_s, timeout=timeout)
+    elif src["kind"] == "noaa_eri":
+        known = [{"id": f["id"], "box": tuple(f["box"]), "template": f["template"]}
+                 for f in cfg.get("noaa_flights", {}).get(src["url"], [])]
+        img = NoaaEriService(src["url"], int(src["level"]), src.get("flights", ()), s.pause_s,
+                             s.tile_pause_s, timeout=timeout, known=known)
     else:
         raise ValueError(f"unknown source kind {src['kind']}")
     fps = FootprintService(fp["url"], img.wkid, fp["fields"], fp["where"], s.pause_s)
     return img, fps
+
+
+def make_labels(lab_cfg: dict, wkid: int, s: Settings) -> LabelService:
+    return LabelService(lab_cfg["url"], wkid, lab_cfg["event"], lab_cfg.get("exclude_assessment", ()), s.pause_s)
 
 
 def source_area(src: dict, info: dict, wkid: int):
@@ -711,6 +989,7 @@ class Run:
     src: dict
     img: object = None
     fp: object = None
+    labels: object = None
     extent: tuple = ()
     k: float = 1.0
     blocks: list = field(default_factory=list)
@@ -774,6 +1053,7 @@ def build(s: Settings, sources: list, cfg: dict, resume: bool = False, fresh: bo
 
     log("🔎 Checking the free data services ...")
     runs = []
+    lab_cfg = cfg["packs"].get(s.pack, {}).get("labels") if s.labels else None
     for sid in sources:
         src = cfg["sources"][sid]
         img, fp = make_services(src, cfg, s)
@@ -781,12 +1061,23 @@ def build(s: Settings, sources: list, cfg: dict, resume: bool = False, fresh: bo
         extent, k = source_area(src, info, img.wkid)
         total = fp.count(extent)
         log(f"   {src['place']} ({src['region']} {src['year']}): photos OK, {total:,} homes marked residential")
+        if "missions" in info:
+            log(f"      NOAA flight days: {', '.join(info['missions'])}; tile level {info['level']}")
+        labels = None
+        if lab_cfg:
+            labels = make_labels(lab_cfg, img.wkid, s)
+            found = labels.info()["fields"]
+            n_lab = len(labels.query(extent)) if s.trial else None
+            here = f", {n_lab:,} assessed homes here" if n_lab is not None else ""
+            log(f"      damage labels: fields {found}{here}")
         blocks = block_grid(extent, s.block_m * k, s.margin_m * k)
         random.Random(f"{s.seed}-{sid}").shuffle(blocks)
-        runs.append(Run(sid, src, img, fp, extent, k, blocks,
-                        stats={"blocks_tried": 0, "blocks_no_photos": 0, "blocks_few_homes": 0,
-                               "blocks_outlines_off": 0, "blocks_used": 0, "skipped": {}, "shift_fallbacks": 0,
-                               "houses_nudged": 0}))
+        stats = {"blocks_tried": 0, "blocks_no_photos": 0, "blocks_few_homes": 0,
+                 "blocks_outlines_off": 0, "blocks_used": 0, "skipped": {}, "shift_fallbacks": 0,
+                 "houses_nudged": 0}
+        if labels is not None:
+            stats.update({"blocks_unassessed": 0, "damage": {}})
+        runs.append(Run(sid, src, img, fp, extent=extent, k=k, blocks=blocks, labels=labels, stats=stats))
     base, extra = divmod(s.target, len(runs))
     for i, r in enumerate(runs):
         r.quota = base + (1 if i < extra else 0)
@@ -811,13 +1102,13 @@ def build(s: Settings, sources: list, cfg: dict, resume: bool = False, fresh: bo
                 for folder in ("images", "review"):
                     (s.out / folder / row["file"]).unlink(missing_ok=True)
             with open(manifest, "w", newline="") as fh:
-                w = csv.DictWriter(fh, fieldnames=MANIFEST_FIELDS)
+                w = csv.DictWriter(fh, fieldnames=s.fields)
                 w.writeheader()
                 w.writerows(rows[:n_chips])
         log(f"↩️  Resuming: {n_chips:,} roofs already done.")
     else:
         with open(manifest, "w", newline="") as fh:
-            csv.DictWriter(fh, fieldnames=MANIFEST_FIELDS).writeheader()
+            csv.DictWriter(fh, fieldnames=s.fields).writeheader()
 
     def save_state():
         state = {"signature": s.signature(), "chips": n_chips, "seen": sorted(seen), "block_log": block_log,
@@ -852,6 +1143,13 @@ def build(s: Settings, sources: list, cfg: dict, resume: bool = False, fresh: bo
                 r.stats["blocks_no_photos"] += 1
                 save_state()
                 continue
+            points = []
+            if r.labels is not None:
+                points = r.labels.query(bbox)
+                if lab_cfg.get("assessed_blocks_only", True) and not any(p[2] in DAMAGED for p in points):
+                    r.stats["blocks_unassessed"] += 1      # FEMA recorded no damage here: no basis for labels
+                    save_state()
+                    continue
             mine = []
             for f in r.fp.query(core):                 # each home once: its centre must lie in this block
                 _, c = polygon_area_centroid(f.ring)
@@ -908,9 +1206,22 @@ def build(s: Settings, sources: list, cfg: dict, resume: bool = False, fresh: bo
                 r.stats["skipped"][reason] = r.stats["skipped"].get(reason, 0) + n
 
             new_rows, kept_here = [], 0
-            for f, key, chip, ring_used in good:
+            if r.labels is not None:
+                near = float(lab_cfg.get("match_m", 6.0)) * r.k
+                labelled = [(f, key, chip, ring_used, damage_for(f.ring, points, near))
+                            for f, key, chip, ring_used in good]
+                hit = [x for x in labelled if x[4][0] in DAMAGED]
+                calm = [x for x in labelled if x[4][0] not in DAMAGED]
+                ratio = float(lab_cfg.get("undamaged_per_damaged", 1.0))
+                calm = calm[:max(int(lab_cfg.get("min_undamaged_per_block", 3)), int(round(ratio * len(hit))))]
+                labelled = [x for pair in itertools.zip_longest(hit, calm) for x in pair if x is not None]
+            else:
+                labelled = [(f, key, chip, ring_used, None) for f, key, chip, ring_used in good]
+            for f, key, chip, ring_used, dmg in labelled:
                 if kept_here >= s.max_per_block or r.kept + kept_here >= r.quota or n_chips + kept_here >= s.target:
                     break
+                if dmg is not None:
+                    r.stats["damage"][dmg[0]] = r.stats["damage"].get(dmg[0], 0) + 1
                 chip_id = f"{n_chips + kept_here + 1:06d}"
                 fname = f"{chip_id}.jpg"
                 chip.image.save(s.out / "images" / fname, quality=95, subsampling=0)
@@ -921,10 +1232,10 @@ def build(s: Settings, sources: list, cfg: dict, resume: bool = False, fresh: bo
                                  "region": r.src["region"], "place": r.src["place"], "year": r.src["year"],
                                  "area_m2": round(chip.area_m2, 1), "long_m": round(chip.long_m, 1),
                                  "short_m": round(chip.short_m, 1), "angle_deg": round(chip.angle_deg, 1),
-                                 "use": f.use})
+                                 "use": f.use, **({"damage": dmg[0], "assessment": dmg[1]} if dmg else {})})
                 kept_here += 1
             with open(manifest, "a", newline="") as fh:
-                csv.DictWriter(fh, fieldnames=MANIFEST_FIELDS).writerows(new_rows)
+                csv.DictWriter(fh, fieldnames=s.fields).writerows(new_rows)
             n_chips += kept_here
             r.kept += kept_here
             r.stats["blocks_used"] += 1
@@ -949,11 +1260,20 @@ PRIVACY_NOTE = ("This pack contains no addresses, coordinates, building IDs or o
 def attribution_text(s: Settings, runs: list, cfg: dict) -> str:
     lines = [f"{s.title or s.name}", "Built for an educational guest lecture on generative models.", "",
              "Aerial imagery"]
-    for r in runs:
-        lines += [f"  {r.src['attribution']}", f"    {r.src['url']}", f"    Licence: {r.src['licence']}"]
+    seen = set()
+    for r in runs:                        # one entry per distinct source (several towns can share one program)
+        entry = (r.src["attribution"], r.src["url"], r.src["licence"])
+        if entry not in seen:
+            seen.add(entry)
+            lines += [f"  {entry[0]}", f"    {entry[1]}", f"    Licence: {entry[2]}"]
     fp = cfg["footprints"]
     lines += ["", "Building outlines (used to find, turn and centre each roof; NOT included in this pack)",
-              f"  {fp['label']}", f"    {fp['url']}", f"    Licence: {fp['licence']}", "", PRIVACY_NOTE, ""]
+              f"  {fp['label']}", f"    {fp['url']}", f"    Licence: {fp['licence']}"]
+    lab = cfg.get("packs", {}).get(s.pack, {}).get("labels") if s.labels else None
+    if lab:
+        lines += ["", "Damage labels (the 'damage' and 'assessment' columns; the points themselves are NOT included)",
+                  f"  {lab['label']}", f"    {lab['url']}", f"    Licence: {lab['licence']}"]
+    lines += ["", PRIVACY_NOTE, ""]
     return "\n".join(lines)
 
 
@@ -973,7 +1293,7 @@ def privacy_problems(out: Path) -> list:
     problems = []
     with open(out / "manifest.csv") as fh:
         header = next(csv.reader(fh))
-    if header != MANIFEST_FIELDS:
+    if header not in (MANIFEST_FIELDS, MANIFEST_FIELDS + LABEL_FIELDS):
         problems.append(f"unexpected manifest columns: {header}")
     report = json.loads((out / "build_report.json").read_text())
 
@@ -1005,7 +1325,8 @@ def privacy_problems(out: Path) -> list:
 def readme_text(s: Settings, n_chips: int, notes: list) -> str:
     text = (f"{s.title or s.name}\n\n{n_chips:,} roof images, {s.chip_px}x{s.chip_px} JPEG, each a "
             f"{s.window_m:.0f} m x {s.window_m:.0f} m square turned so the roof's long side is horizontal.\n"
-            "manifest.csv: one row per image (town, year, roof area and size in metres, turn angle, building use).\n"
+            "manifest.csv: one row per image (town, year, roof area and size in metres, turn angle, building use"
+            + ("; FEMA's damage level for the home and how it was judged" if s.labels else "") + ").\n"
             "ATTRIBUTION.txt: sources and licences. SHA256SUMS.txt: checksums of every file.\n\n" + PRIVACY_NOTE + "\n")
     if notes:
         text += "\nKnown limits\n" + "".join(f"  - {n}\n" for n in notes)
@@ -1071,8 +1392,8 @@ def finish(s: Settings, runs: list, cfg: dict, n_chips: int, block_log: list, se
 
 
 def rezip(s: Settings, cfg: dict, log=print) -> dict:
-    """Refresh README.txt (for example new 'Known limits' notes), checksums and the zip of a finished pack,
-    without downloading or changing a single roof image."""
+    """Refresh README.txt (for example new 'Known limits' notes), ATTRIBUTION.txt, checksums and the zip of a
+    finished pack, without downloading or changing a single roof image."""
     report_path, manifest = s.out / "build_report.json", s.out / "manifest.csv"
     if not report_path.exists() or not manifest.exists():
         raise SystemExit(f"❌ {s.out} is not a finished pack (no build_report.json). Build it first.")
@@ -1083,14 +1404,18 @@ def rezip(s: Settings, cfg: dict, log=print) -> dict:
     old_meta = s.zip_dir / f"{s.name}.json" if s.zip_dir else None
     built = json.loads(old_meta.read_text()).get("built") if old_meta and old_meta.exists() else None
     (s.out / "README.txt").write_text(readme_text(s, n_chips, pack_notes(cfg, s)))
+    runs = [Run(sid, cfg["sources"][sid], None, None) for sid in report["sources"] if sid in cfg["sources"]]
+    if len(runs) == len(report["sources"]):
+        (s.out / "ATTRIBUTION.txt").write_text(attribution_text(s, runs, cfg))
     out = seal(s, n_chips, {k: v["chips"] for k, v in report["sources"].items()}, built=built or report.get("built"))
-    log(f"   README refreshed, checksums rebuilt, privacy check {out['privacy_check']}.")
+    log(f"   README and ATTRIBUTION refreshed, checksums rebuilt, privacy check {out['privacy_check']}.")
     return out
 
 
 def make_sheet(out: Path, runs: list, log=print, per_source: int = 20, cols: int = 10):
     """Trial only: one review picture with up to 20 roofs per source (red = public outline, yellow = shifted)."""
     rows = list(csv.DictReader(open(out / "manifest.csv")))
+    damage_of = {row["file"]: row["damage"] for row in rows if row.get("damage")}
     tile, label_w = 130, 170
     bands = []
     for r in runs:
@@ -1106,6 +1431,10 @@ def make_sheet(out: Path, runs: list, log=print, per_source: int = 20, cols: int
         d.text((6, y + 6), label, fill=(0, 0, 0))
         for i, fname in enumerate(files):
             im = Image.open(out / "review" / fname).resize((tile - 4, tile - 4))
+            dmg = damage_of.get(fname)
+            if dmg:
+                ImageDraw.Draw(im).rectangle((0, tile - 18, tile, tile), fill=(0, 0, 0))
+                ImageDraw.Draw(im).text((3, tile - 17), dmg, fill=(255, 255, 255))
             sheet.paste(im, (label_w + (i % cols) * tile, y + (i // cols) * tile))
         y += max(1, math.ceil(len(files) / cols)) * tile
     sheet.save(out / "trial_sheet.jpg", quality=88)
@@ -1123,7 +1452,7 @@ def settings_for(pack: str, cfg: dict, trial: bool, out: Path | None = None, see
     s = Settings(out=out or folder, pack=pack, name=p["name"], title=p["title"], target=target, seed=seed,
                  block_m=float(p["block_m"]), max_per_block=int(p["max_per_block"]),
                  min_homes_per_block=int(p["min_homes_per_block"]), trial=trial, review=trial,
-                 zip_dir=None if trial else ROOT / "dist")
+                 zip_dir=None if trial else ROOT / "dist", labels="labels" in p)
     if trial:
         s.max_per_block = min(s.max_per_block, 25)     # a trial looks at several neighbourhoods per town
     return s, p["sources"]
@@ -1139,7 +1468,8 @@ def print_sources(cfg: dict):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--pack", choices=["train", "variety", "all"], default=None)
+    ap.add_argument("--pack", choices=["train", "variety", "storm", "all"], default=None,
+                    help="'all' builds train and variety; the storm pack is built on its own")
     ap.add_argument("--trial", action="store_true", help="about 50 roofs per source plus a review picture")
     ap.add_argument("--resume", action="store_true", help="continue a build that stopped")
     ap.add_argument("--fresh", action="store_true", help="delete an unfinished build and start again")
@@ -1162,7 +1492,7 @@ def main(argv=None):
             raise SystemExit("❌ --rezip works on finished packs only (no --trial, --only, --resume or --fresh).")
         for pack in packs:
             s, _ = settings_for(pack, cfg, False, a.out if len(packs) == 1 else None, a.seed)
-            print(f"\n📦 {s.name}: refreshing README and zip")
+            print(f"\n📦 {s.name}: refreshing README, ATTRIBUTION and zip")
             r = rezip(s, cfg)
             print(f"   Zip: {r['zip']}\n   SHA-256: {r['zip_sha256']}")
         return
@@ -1191,7 +1521,7 @@ def main(argv=None):
               f"(about {r['minutes_per_1000_chips']} min per 1,000). Privacy check: {r['privacy_check']}.")
         for sid, v in r["sources"].items():
             print(f"   {v['place']:<18} {v['chips']:6,} roofs   outline shift ~{v['median_outline_shift_m']} m   "
-                  f"skipped {v['skipped']}")
+                  f"skipped {v['skipped']}" + (f"   damage {v['damage']}" if "damage" in v else ""))
         if "zip" in r:
             print(f"   Zip: {r['zip']}\n   SHA-256: {r['zip_sha256']}")
 

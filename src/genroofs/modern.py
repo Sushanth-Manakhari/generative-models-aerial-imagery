@@ -35,8 +35,8 @@ from .data import cache_dir, fetch_checked
 from .utils import pick_device
 
 __all__ = ["UPSCALERS", "SD_AUTOENCODER", "available_upscalers", "upscaler_info", "credit", "fetch_upscaler",
-           "load_upscaler", "enlarge", "stretch", "load_sd_autoencoder", "sd_copies", "latent_numbers", "big_page",
-           "show_big"]
+           "load_upscaler", "enlarge", "stretch", "load_sd_autoencoder", "sd_copies", "sd_numbers", "latent_numbers",
+           "big_page", "show_big"]
 
 UPSCALERS = {
     "realesrgan": {
@@ -221,6 +221,22 @@ def sd_copies(model, images, batch_size: int = 8) -> torch.Tensor:
         latent = model.encode(x).latent_dist.mode()
         y = model.decode(latent).sample.float()
         out.append(((y.clamp(-1, 1) + 1) * 127.5).round().to(torch.uint8).cpu())
+    return torch.cat(out)
+
+
+@torch.no_grad()
+def sd_numbers(model, images, batch_size: int = 16) -> torch.Tensor:
+    """Stable Diffusion's autoencoder as a feature maker: each roof's grid of numbers (the centre of its range),
+    flattened. uint8 N x 3 x H x W -> float N x (4 * H/8 * W/8) on the CPU (1,024 numbers for a 128-pixel roof)."""
+    images = _as_batch(images)
+    if images.shape[-1] % 8 or images.shape[-2] % 8:
+        raise ValueError(f"Stable Diffusion's autoencoder needs sizes divisible by 8, got {tuple(images.shape[-2:])}.")
+    device = next(model.parameters()).device
+    dtype = next(model.parameters()).dtype
+    out = []
+    for i in range(0, len(images), batch_size):
+        x = (images[i:i + batch_size].to(device).float() / 127.5 - 1).to(dtype)
+        out.append(model.encode(x).latent_dist.mode().float().flatten(1).cpu())
     return torch.cat(out)
 
 

@@ -38,13 +38,14 @@ from . import __version__
 
 __all__ = ["Roofs", "PackError", "pack_info", "available_packs", "cache_dir", "download_pack", "load_roofs",
            "load_selected", "attribution", "normalize_angle", "class_slice", "train_test_split", "to_float", "to_bytes", "batches",
-           "to_pandas", "MANIFEST_FIELDS", "CLASS_SIZE", "USER_AGENT"]
+           "to_pandas", "MANIFEST_FIELDS", "LABEL_FIELDS", "CLASS_SIZE", "USER_AGENT"]
 
 REPO = "Sushanth-Manakhari/generative-models-aerial-imagery"
 RELEASE_TAG = "data-v1"
 RELEASE_URL = f"https://github.com/{REPO}/releases/download/{RELEASE_TAG}/{{file}}"
 MANIFEST_FIELDS = ("chip_id", "file", "source", "region", "place", "year", "area_m2", "long_m", "short_m",
                    "angle_deg", "use")
+LABEL_FIELDS = ("damage", "assessment")      # storm pack only: FEMA's damage level and how it was judged
 FLOAT_FIELDS = ("area_m2", "long_m", "short_m", "angle_deg")
 CLASS_SIZE = 10_000
 CHUNK = 1 << 20
@@ -306,7 +307,7 @@ def normalize_angle(angle: float) -> float:
 
 
 def _clean_row(row: dict) -> dict:
-    out = {k: row[k] for k in MANIFEST_FIELDS}
+    out = {k: row[k] for k in MANIFEST_FIELDS + (LABEL_FIELDS if "damage" in row else ())}
     for k in FLOAT_FIELDS:
         out[k] = float(out[k])
     out["year"] = int(out["year"])
@@ -320,7 +321,7 @@ def _read_manifest(zf: zipfile.ZipFile, name: str) -> list:
     except KeyError:
         raise PackError(f"{name}: manifest.csv is missing from the zip. Delete the zip and download it again.")
     reader = csv.DictReader(io.StringIO(text))
-    if tuple(reader.fieldnames or ()) != MANIFEST_FIELDS:
+    if tuple(reader.fieldnames or ()) not in (MANIFEST_FIELDS, MANIFEST_FIELDS + LABEL_FIELDS):
         raise PackError(f"{name}: manifest.csv has unexpected columns {reader.fieldnames}.")
     return [_clean_row(r) for r in reader]
 
@@ -588,4 +589,6 @@ def to_pandas(manifest: list):
         import pandas as pd
     except ImportError:
         raise ImportError("to_pandas needs pandas, which is optional. Install it with: pip install pandas") from None
-    return pd.DataFrame(list(manifest), columns=list(MANIFEST_FIELDS))
+    rows = list(manifest)
+    labelled = bool(rows) and "damage" in rows[0]
+    return pd.DataFrame(rows, columns=list(MANIFEST_FIELDS + (LABEL_FIELDS if labelled else ())))

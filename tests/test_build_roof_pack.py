@@ -106,7 +106,7 @@ def test_web_mercator_round_trip_and_scale():
 
 def test_every_configured_source_is_complete():
     cfg = brp.load_config()
-    assert set(cfg["packs"]) == {"train", "variety"}
+    assert set(cfg["packs"]) == {"train", "variety", "storm"}
     for pack in cfg["packs"].values():
         assert pack["sources"] and pack["target"] > 0
         for sid in pack["sources"]:
@@ -117,6 +117,16 @@ def test_every_configured_source_is_complete():
             if src["kind"] == "image":
                 assert src.get("area") == "service" or len(src["area_lonlat"]) == 4
                 brp.utm_zone_of(int(src["wkid"]))
+            elif src["kind"] == "noaa_eri":
+                assert isinstance(src["level"], int) and src["flights"] and len(src["area_lonlat"]) == 4
+                assert src["url"].startswith("https://storms.ngs.noaa.gov/storms/")
+                flights = cfg["noaa_flights"][src["url"]]
+                assert flights and all(f["template"].startswith("https://stormscdn.ngs.noaa.gov/")
+                                       and f["template"].endswith("/{z}/{x}/{y}") and len(f["box"]) == 4
+                                       for f in flights)
+                lon0, lat0, lon1, lat1 = src["area_lonlat"]          # some flight covers the whole town box
+                assert any(f["box"][0] <= lon0 and f["box"][1] <= lat0 and lon1 <= f["box"][2] and lat1 <= f["box"][3]
+                           for f in flights), sid
             else:
                 assert src["kind"] == "tiles" and isinstance(src["level"], int) and len(src["area_lonlat"]) == 4
             if "area_lonlat" in src:                         # neighbourhood-sized boxes, never a single home
@@ -124,6 +134,11 @@ def test_every_configured_source_is_complete():
                 assert 0.02 <= lon1 - lon0 <= 0.2 and 0.02 <= lat1 - lat0 <= 0.2
     fields = cfg["footprints"]["fields"]
     assert set(fields) == {"OCC_CLS", "PRIM_OCC", "SQMETERS"} and not any("ADDR" in f for f in fields)
+    storm = cfg["packs"]["storm"]
+    lab = storm["labels"]
+    assert lab["url"].startswith("https://") and lab["event"] and lab["licence"] and "Modeled" in lab["exclude_assessment"]
+    assert all(cfg["sources"][sid]["kind"] == "noaa_eri" for sid in storm["sources"])
+    assert "labels" not in cfg["packs"]["train"] and "labels" not in cfg["packs"]["variety"]
     train = cfg["packs"]["train"]["sources"]
     assert len(train) == 8 and "me_wells_2022" in train          # Wells included at the instructor's decision
     assert all(cfg["sources"][sid]["region"] == "Maine" for sid in train)
@@ -505,6 +520,7 @@ def test_rezip_refreshes_readme_and_zip_without_touching_images(tmp_path, monkey
     out = brp.rezip(s, cfg, log=lambda *a: None)
     assert "Known limits" in (s.out / "README.txt").read_text() and "About 4% show no house." in \
         zipfile.ZipFile(z).read("roofs_test/README.txt").decode()
+    assert zipfile.ZipFile(z).read("roofs_test/ATTRIBUTION.txt").decode() == (s.out / "ATTRIBUTION.txt").read_text()
     after = {n: zipfile.ZipFile(z).read(n) for n in zipfile.ZipFile(z).namelist() if n.endswith(".jpg")}
     assert before == after and len(after) == 40                                  # every image byte-identical
     meta = json.loads((tmp_path / "dist" / "roofs_test.json").read_text())
@@ -516,6 +532,15 @@ def test_rezip_refreshes_readme_and_zip_without_touching_images(tmp_path, monkey
     (s.out / "build_report.json").unlink()
     with pytest.raises(SystemExit):
         brp.rezip(s, cfg, log=lambda *a: None)
+
+
+def test_attribution_names_a_shared_source_once():
+    cfg = fake_cfg([(0, 0, 10, 10), (0, 0, 10, 10)])
+    for sid in ("town0", "town1"):
+        cfg["sources"][sid].update(attribution="Imagery: one program", url="https://example.test/a", licence="PD")
+    runs = [brp.Run(sid, cfg["sources"][sid]) for sid in ("town0", "town1")]
+    text = brp.attribution_text(brp.Settings(out=None, name="x", title="X"), runs, cfg)
+    assert text.count("Imagery: one program") == 1 and text.count("https://example.test/a") == 1
 
 
 def test_both_packs_carry_known_limits_notes():
@@ -535,3 +560,190 @@ def test_privacy_check_catches_leaks(tmp_path, monkeypatch):
     (s.out / "homes.geojson").write_text("{}")
     problems = " | ".join(brp.privacy_problems(s.out))
     assert "bbox" in problems and "coordinate-like" in problems and "homes.geojson" in problems
+
+
+# ---------------------------------------------------------------- storm pack: NOAA photos and FEMA damage labels
+WMTS = """<Capabilities><Contents>
+<Layer><ows:Title>A</ows:Title><ows:Identifier>20181011a-rgb</ows:Identifier>
+<ows:WGS84BoundingBox><ows:LowerCorner>-86.0 29.5</ows:LowerCorner><ows:UpperCorner>-85.0 30.5</ows:UpperCorner>
+</ows:WGS84BoundingBox><TileMatrixSetLink><TileMatrixSet>GoogleMapsCompatible</TileMatrixSet></TileMatrixSetLink>
+<ResourceURL format="image/jpgpng" resourceType="tile"
+ template="https://tiles.example.test/20181011a-rgb/{TileMatrix}/{TileCol}/{TileRow}"/></Layer>
+<Layer><ows:Title>B</ows:Title><ows:Identifier>20181012a-rgb</ows:Identifier>
+<ows:WGS84BoundingBox><ows:LowerCorner>-86.5 29.0</ows:LowerCorner><ows:UpperCorner>-84.5 31.0</ows:UpperCorner>
+</ows:WGS84BoundingBox><TileMatrixSetLink><TileMatrixSet>GoogleMapsCompatible</TileMatrixSet></TileMatrixSetLink>
+<ResourceURL format="image/jpgpng" resourceType="tile"
+ template="https://tiles.example.test/20181012a-rgb/{TileMatrix}/{TileCol}/{TileRow}"/></Layer>
+<Layer><ows:Title>C</ows:Title><ows:Identifier>20190901a-rgb</ows:Identifier>
+<ows:WGS84BoundingBox><ows:LowerCorner>-86.0 29.5</ows:LowerCorner><ows:UpperCorner>-85.0 30.5</ows:UpperCorner>
+</ows:WGS84BoundingBox><ResourceURL template="https://tiles.example.test/20190901a-rgb/{TileMatrix}/{TileCol}/{TileRow}"/>
+</Layer></Contents></Capabilities>"""
+
+
+def test_parse_wmts_reads_layers_boxes_and_templates():
+    layers = brp.parse_wmts(WMTS)
+    assert [l["id"] for l in layers] == ["20181011a-rgb", "20181012a-rgb", "20190901a-rgb"]
+    assert layers[0]["box"] == (-86.0, 29.5, -85.0, 30.5)
+    assert layers[0]["template"].format(z=19, x=5, y=7) == "https://tiles.example.test/20181011a-rgb/19/5/7"
+
+
+def test_noaa_service_uses_the_flight_that_photographed_the_box():
+    """Flight A's rectangle covers the box but has no photos there (NOAA's 1 x 1 'no tile' answer);
+    flight B has them. The service must find B, and ignore flights outside the chosen days."""
+    pages = {"https://storms.example.test/storms/michael/index.html":
+             '<a href="services/WMTSCapabilities.xml">WMTS</a>',
+             "https://storms.example.test/storms/michael/services/WMTSCapabilities.xml": WMTS}
+    asked = []
+
+    def fetch(url):
+        asked.append(url)
+        if "20181011a" in url:
+            return brp._real_tile(Image.new("RGB", (1, 1)))
+        return Image.new("RGB", (256, 256), GROUND)
+
+    svc = brp.NoaaEriService("https://storms.example.test/storms/michael/index.html", 19, ["201810"],
+                             pause_s=0, tile_pause_s=0, get_text=pages.__getitem__, fetch=fetch)
+    info = svc.info()
+    assert info["missions"] == ["20181011a-rgb", "20181012a-rgb"]
+    assert svc.caps_url.endswith("/storms/michael/services/WMTSCapabilities.xml")
+    x0, y0 = brp.lonlat_to_merc(-85.66, 30.17)
+    bbox = (x0, y0, x0 + 400, y0 + 400)
+    img = svc.export(bbox, 128)
+    assert brp.nodata_fraction(img) < 0.01 and svc.flight_for(bbox)["id"] == "20181012a-rgb"
+    zooms = {int(u.split("-rgb/")[1].split("/")[0]) for u in asked}
+    assert min(zooms) >= 17 and max(zooms) <= 19 and not any("20190901a" in u for u in asked)
+    far = brp.lonlat_to_merc(-80.0, 25.0)                     # no flight covers this: a black picture, no requests
+    n = len(asked)
+    assert brp.nodata_fraction(svc.export((far[0], far[1], far[0] + 400, far[1] + 400), 64)) == 1.0
+    assert len(asked) == n
+
+
+LAYER = {"fields": [
+    {"name": "OBJECTID", "alias": "OBJECTID"},
+    {"name": "DMG_LEVEL", "alias": "Damage Level", "domain": {"codedValues": [
+        {"code": "DES", "name": "Destroyed"}, {"code": "MAJ", "name": "Major"}, {"code": "AFF", "name": "Affected"},
+        {"code": "NOD", "name": "No Damage"}, {"code": "UNK", "name": "Unknown"}]}},
+    {"name": "DMG_TYPE", "alias": "Damage Type", "domain": {"codedValues": [{"code": "WI", "name": "Wind"}]}},
+    {"name": "ASMT_TYPE", "alias": "Assessment Type", "domain": {"codedValues": [
+        {"code": "MOD", "name": "Modeled"}, {"code": "RS", "name": "Remote Sensing"}]}},
+    {"name": "EVENT_DATE", "alias": "Event Date"},
+    {"name": "EVENT_NAME", "alias": "Event Name"}]}
+
+
+def test_label_service_finds_fields_decodes_codes_and_pages():
+    calls = []
+
+    def get(url, params):
+        calls.append(params)
+        if url.endswith("/0"):
+            return LAYER
+        page = [{"geometry": {"x": float(i), "y": 2.0}, "attributes": {"DMG_LEVEL": "AFF", "ASMT_TYPE": "RS",
+                                                                     "DMG_TYPE": "WI"}} for i in range(3)]
+        if params["resultOffset"] == 0:
+            return {"features": page, "exceededTransferLimit": True}
+        return {"features": [{"geometry": {"x": 9.0, "y": 9.0}, "attributes": {"DMG_LEVEL": "DES"}}]}
+
+    lab = brp.LabelService("https://example.test/FeatureServer/0", 3857, "2018 Hurricane Michael", ["Modeled"],
+                           pause_s=0, get_json=get)
+    assert lab.info()["fields"] == {"damage": "DMG_LEVEL", "dtype": "DMG_TYPE", "assessment": "ASMT_TYPE",
+                                    "event": "EVENT_NAME"}
+    assert lab.where() == "EVENT_NAME = '2018 Hurricane Michael' AND (ASMT_TYPE IS NULL OR ASMT_TYPE NOT IN ('MOD'))"
+    pts = lab.query((0, 0, 10, 10))
+    assert len(pts) == 4 and pts[0][2:] == ("Affected", "Remote Sensing / Wind") and pts[3][2:] == ("Destroyed", "")
+    assert [c["resultOffset"] for c in calls[1:]] == [0, 3] and all(c["inSR"] == 3857 for c in calls[1:])
+
+
+def test_damage_for_takes_the_worst_point_on_the_home():
+    ring = rect_ring(100, 100, 14, 10, 0)
+    pts = [(101, 99, "Affected", "RS"), (98, 102, "Destroyed", "RS"), (200, 200, "Destroyed", "RS"),
+           (104, 103, "Unknown", "RS")]
+    assert brp.damage_for(ring, pts, 6.0) == ("Destroyed", "RS")
+    assert brp.damage_for(ring, [(111, 100, "Affected", "RS")], 6.0) == ("none recorded", "")   # 11 m from centre
+    assert brp.damage_for(ring, [(105, 100, "Affected", "RS")], 6.0) == ("Affected", "RS")
+    assert brp.damage_for(ring, [], 6.0) == ("none recorded", "")
+
+
+class FakeLabels:
+    """Pretend FEMA layer: every third home in the western half 'Affected', every seventh 'Destroyed';
+    the eastern half of the town has no assessments at all."""
+
+    def __init__(self, homes, east_from):
+        self.points = []
+        for i, h in enumerate(homes):
+            _, c = brp.polygon_area_centroid(h)
+            if c[0] >= east_from:
+                continue
+            if i % 7 == 0:
+                self.points.append((c[0], c[1], "Destroyed", "Remote Sensing / Wind"))
+            elif i % 3 == 0:
+                self.points.append((c[0], c[1], "Affected", "Remote Sensing / Wind"))
+
+    def info(self):
+        return {"fields": {"damage": "DMG_LEVEL"}}
+
+    def query(self, env):
+        xmin, ymin, xmax, ymax = env
+        return [p for p in self.points if xmin <= p[0] <= xmax and ymin <= p[1] <= ymax]
+
+
+def test_storm_fake_build_adds_damage_columns_and_balances_them(tmp_path, monkeypatch):
+    ext = [(0.0, 0.0, 1275.0, 675.0)]
+    fake = FakeImages(make_homes(ext[0], seed=3), ext[0])
+    patch_services(monkeypatch, [fake])
+    labels = FakeLabels(fake.homes, east_from=450.0)
+    monkeypatch.setattr(brp, "make_labels", lambda lab_cfg, wkid, s: labels)
+    cfg = fake_cfg(ext)
+    cfg["packs"]["storm"] = {"labels": {"label": "Pretend FEMA layer", "url": "https://example.test/FS/0",
+                                        "licence": "public", "event": "x", "match_m": 6.0,
+                                        "undamaged_per_damaged": 1.0, "min_undamaged_per_block": 1},
+                             "notes": ["Damage labels are pretend."]}
+    s = settings(tmp_path, pack="storm", labels=True, target=400, max_per_block=40, min_homes_per_block=1,
+                 zip_dir=tmp_path / "dist", name="roofs_storm_test", title="Storm test")
+    rep = brp.build(s, ["town0"], cfg, log=lambda *a: None)
+    rows = list(csv.DictReader(open(s.out / "manifest.csv")))
+    assert list(rows[0]) == brp.MANIFEST_FIELDS + brp.LABEL_FIELDS and rep["privacy_check"] == "passed"
+    damage = [r["damage"] for r in rows]
+    hit = sum(d in brp.DAMAGED for d in damage)
+    assert set(damage) <= {"Affected", "Destroyed", "none recorded"} and "Destroyed" in damage
+    assert abs(hit - (len(rows) - hit)) <= 0.25 * len(rows)                 # about as many calm roofs as damaged
+    assert all(r["assessment"] == ("Remote Sensing / Wind" if r["damage"] in brp.DAMAGED else "") for r in rows)
+    st = rep["sources"]["town0"]
+    assert st["blocks_unassessed"] >= 1 and sum(st["damage"].values()) == len(rows)
+    assert "Pretend FEMA layer" in (s.out / "ATTRIBUTION.txt").read_text()
+    readme = (s.out / "README.txt").read_text()
+    assert "damage level" in readme and "pretend" in readme
+    assert brp.privacy_problems(s.out) == []
+
+
+def test_noaa_service_uses_listed_flights_without_the_page():
+    def no_page(url):
+        raise AssertionError("the storm page should not be fetched when flights are listed")
+    known = [{"id": "20181011a-rgb", "box": (-88.0, 29.5, -84.7, 30.5),
+              "template": "https://tiles.example.test/20181011a-rgb/{z}/{x}/{y}"}]
+    svc = brp.NoaaEriService("https://storms.example.test/storms/michael/index.html", 19, ["201810"], pause_s=0,
+                             tile_pause_s=0, get_text=no_page, known=known,
+                             fetch=lambda u: Image.new("RGB", (256, 256), GROUND))
+    assert svc.info()["missions"] == ["20181011a-rgb"]
+    x0, y0 = brp.lonlat_to_merc(-85.66, 30.17)
+    assert brp.nodata_fraction(svc.export((x0, y0, x0 + 400, y0 + 400), 64)) < 0.01
+
+
+def test_noaa_service_finds_the_link_inside_a_script():
+    pages = {"https://storms.example.test/storms/michael/index.html":
+             '<html><script src="js/app.js"></script><script src="https://cdn.example.test/x.js"></script></html>',
+             "https://storms.example.test/storms/michael/js/app.js":
+             'var wmts = "https://storms.example.test/storms/tilesj/services/tileserver.php/wmts";',
+             "https://storms.example.test/storms/tilesj/services/tileserver.php/wmts": WMTS}
+    asked = []
+
+    def get(url):
+        asked.append(url)
+        if url not in pages:
+            raise brp.ServiceError("404")
+        return pages[url]
+
+    svc = brp.NoaaEriService("https://storms.example.test/storms/michael/index.html", 19, ["201810"], pause_s=0,
+                             tile_pause_s=0, get_text=get, fetch=lambda u: None)
+    assert svc.info()["missions"] == ["20181011a-rgb", "20181012a-rgb"]
+    assert svc.caps_url.endswith("/tilesj/services/tileserver.php/wmts")
+    assert not any("cdn.example.test" in u for u in asked)          # only the storm site's own scripts

@@ -158,11 +158,11 @@ Your prompt now starts with `(.venv)`. From there:
 | Leave the environment | `deactivate` |
 
 **What a good test run looks like.** The quick tests end with a line like
-`181 passed, 5 skipped, 50 deselected, 6 warnings`, and all tests with `231 passed, 5 skipped, 6 warnings` (the
+`195 passed, 6 skipped, 58 deselected, 6 warnings`, and all tests with `253 passed, 6 skipped, 6 warnings` (the
 counts change as tests are added, and the number of warnings can differ by computer). In the quick run,
 `deselected` counts the pack builder's tests, which only the full run includes. All of this is expected:
 
-- **5 skipped:** the test for the optional pandas extra, two tests for the optional modern enlargers and two for
+- **6 skipped:** the test for the optional pandas extra, two tests for the optional modern enlargers and three for
   Stable Diffusion's autoencoder are skipped when pandas, spandrel and diffusers are not installed. After installing
   them (the table above) they run too.
 - **Warnings:** each says `FigureCanvasAgg is non-interactive, and thus cannot be shown`. The tests draw
@@ -264,7 +264,7 @@ This needs no activation step and no change to Windows' script policy:
 | Add pandas (optional, for `to_pandas()`) | `.venv\Scripts\python.exe -m pip install pandas` |
 | Add the modern models (optional: Real-ESRGAN, SwinIR, Stable Diffusion's autoencoder) | `.venv\Scripts\python.exe -m pip install "spandrel>=0.4.2,<0.5" "diffusers>=0.30,<1"` |
 
-The test results should look like the Mac's in 2.5: `passed`, `3 skipped` and a few warnings are expected;
+The test results should look like the Mac's in 2.5: `passed`, `6 skipped` and a few warnings are expected;
 `failed` or `error` is not.
 
 ---

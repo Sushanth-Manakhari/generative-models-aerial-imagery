@@ -7,6 +7,16 @@
     "fields": ["OCC_CLS", "PRIM_OCC", "SQMETERS"],
     "where": "OCC_CLS = 'Residential'"
   },
+  "noaa_flights": {
+    "_about": "NOAA Emergency Response Imagery flights per storm page, from the storm's WMTS capabilities (checked November 16, 2026). Listed here because the Michael page adds its tile-service link with JavaScript. box = lon/lat outline of the flight lines.",
+    "https://storms.ngs.noaa.gov/storms/michael/index.html": [
+      {"id": "20181011a-rgb", "box": [-88.0501, 29.5749, -84.6999, 30.4751], "template": "https://stormscdn.ngs.noaa.gov/20181011a-rgb/{z}/{x}/{y}"},
+      {"id": "20181012a-rgb", "box": [-85.5501, 29.8249, -84.7999, 30.8501], "template": "https://stormscdn.ngs.noaa.gov/20181012a-rgb/{z}/{x}/{y}"},
+      {"id": "20181012b-rgb", "box": [-85.4001, 30.3499, -84.1499, 31.2251], "template": "https://stormscdn.ngs.noaa.gov/20181012b-rgb/{z}/{x}/{y}"},
+      {"id": "20181013a-rgb", "box": [-86.1501, 29.0749, -82.9999, 30.8251], "template": "https://stormscdn.ngs.noaa.gov/20181013a-rgb/{z}/{x}/{y}"},
+      {"id": "20181014a-rgb", "box": [-86.5501, 29.7249, -84.3499, 30.9001], "template": "https://stormscdn.ngs.noaa.gov/20181014a-rgb/{z}/{x}/{y}"}
+    ]
+  },
   "packs": {
     "train": {
       "name": "roofs_maine_2022",
@@ -34,6 +44,30 @@
       ],
       "sources": ["ct_west_hartford_2023", "in_fort_wayne_2024", "tx_round_rock_2021", "fl_miami_dade_2025",
                   "az_tempe_2024"]
+    },
+    "storm": {
+      "name": "roofs_storm_michael_2018",
+      "title": "Storm pack: Florida house roofs photographed the day after Hurricane Michael (2018), with FEMA damage labels",
+      "target": 2000,
+      "block_m": 300,
+      "max_per_block": 40,
+      "min_homes_per_block": 6,
+      "labels": {
+        "label": "FEMA Geospatial Damage Assessments Public (FEMA Historical Geospatial Damage Assessment Database)",
+        "url": "https://services.arcgis.com/XG15cJAlne2vxtgt/ArcGIS/rest/services/FEMA_Historical_Geospatial_Damage_Assessment_Database/FeatureServer/0",
+        "licence": "FEMA public dataset, intended for public access and use (U.S. Government work)",
+        "event": "2018 Hurricane Michael", "exclude_assessment": ["Modeled"],
+        "match_m": 6.0, "undamaged_per_damaged": 1.0, "min_undamaged_per_block": 2, "assessed_blocks_only": true
+      },
+      "notes": [
+        "Damage labels are FEMA's remote-sensing assessments for Hurricane Michael (wind damage): 'Affected' (some damage) or 'Destroyed'. 'none recorded' only means FEMA recorded no damage point for that home.",
+        "The labels were made by FEMA analysts from imagery, not by us, and not always from these exact photos: a few labelled homes look fine from above and a few unlabelled ones look damaged.",
+        "Homes that were destroyed and never rebuilt can be missing from today's building outlines, so 'Destroyed' roofs are under-represented.",
+        "Only neighbourhoods where FEMA recorded damage were used, and homes without recorded damage were kept at about the same number as damaged ones, so the share of damaged roofs here is far higher than in an insurer's whole portfolio.",
+        "NOAA's web tiles stop at about 30 cm per pixel, coarser than the 19 cm the other packs use, so these roofs look a little softer."
+      ],
+      "sources": ["fl_michael_mexico_beach", "fl_michael_panama_city", "fl_michael_callaway_parker",
+                  "fl_michael_lynn_haven", "fl_michael_marianna"]
     }
   },
   "sources": {
@@ -127,6 +161,41 @@
       "level": 20, "area_lonlat": [-111.95, 33.34, -111.90, 33.38],
       "licence": "CC BY 4.0",
       "attribution": "Imagery: City of Tempe, 2024 Aerial Imagery (CC BY 4.0)"
+    },
+    "fl_michael_mexico_beach": {
+      "kind": "noaa_eri", "region": "Florida", "place": "Mexico Beach", "year": 2018,
+      "url": "https://storms.ngs.noaa.gov/storms/michael/index.html",
+      "level": 19, "flights": ["201810"], "area_lonlat": [-85.445, 29.925, -85.375, 29.965],
+      "licence": "Public domain: NOAA Emergency Response Imagery, collected by the NOAA National Geodetic Survey (Remote Sensing Division), a work of the U.S. Government; credit to NOAA appreciated.",
+      "attribution": "Imagery: NOAA National Geodetic Survey, Emergency Response Imagery, Hurricane Michael (flown October 11-14, 2018)"
+    },
+    "fl_michael_panama_city": {
+      "kind": "noaa_eri", "region": "Florida", "place": "Panama City", "year": 2018,
+      "url": "https://storms.ngs.noaa.gov/storms/michael/index.html",
+      "level": 19, "flights": ["201810"], "area_lonlat": [-85.700, 30.140, -85.620, 30.200],
+      "licence": "Public domain: NOAA Emergency Response Imagery, collected by the NOAA National Geodetic Survey (Remote Sensing Division), a work of the U.S. Government; credit to NOAA appreciated.",
+      "attribution": "Imagery: NOAA National Geodetic Survey, Emergency Response Imagery, Hurricane Michael (flown October 11-14, 2018)"
+    },
+    "fl_michael_callaway_parker": {
+      "kind": "noaa_eri", "region": "Florida", "place": "Callaway and Parker", "year": 2018,
+      "url": "https://storms.ngs.noaa.gov/storms/michael/index.html",
+      "level": 19, "flights": ["201810"], "area_lonlat": [-85.620, 30.110, -85.540, 30.170],
+      "licence": "Public domain: NOAA Emergency Response Imagery, collected by the NOAA National Geodetic Survey (Remote Sensing Division), a work of the U.S. Government; credit to NOAA appreciated.",
+      "attribution": "Imagery: NOAA National Geodetic Survey, Emergency Response Imagery, Hurricane Michael (flown October 11-14, 2018)"
+    },
+    "fl_michael_lynn_haven": {
+      "kind": "noaa_eri", "region": "Florida", "place": "Lynn Haven", "year": 2018,
+      "url": "https://storms.ngs.noaa.gov/storms/michael/index.html",
+      "level": 19, "flights": ["201810"], "area_lonlat": [-85.680, 30.220, -85.620, 30.275],
+      "licence": "Public domain: NOAA Emergency Response Imagery, collected by the NOAA National Geodetic Survey (Remote Sensing Division), a work of the U.S. Government; credit to NOAA appreciated.",
+      "attribution": "Imagery: NOAA National Geodetic Survey, Emergency Response Imagery, Hurricane Michael (flown October 11-14, 2018)"
+    },
+    "fl_michael_marianna": {
+      "kind": "noaa_eri", "region": "Florida", "place": "Marianna", "year": 2018,
+      "url": "https://storms.ngs.noaa.gov/storms/michael/index.html",
+      "level": 19, "flights": ["201810"], "area_lonlat": [-85.260, 30.750, -85.200, 30.800],
+      "licence": "Public domain: NOAA Emergency Response Imagery, collected by the NOAA National Geodetic Survey (Remote Sensing Division), a work of the U.S. Government; credit to NOAA appreciated.",
+      "attribution": "Imagery: NOAA National Geodetic Survey, Emergency Response Imagery, Hurricane Michael (flown October 11-14, 2018)"
     }
   }
 }

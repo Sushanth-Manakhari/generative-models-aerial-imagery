@@ -4,18 +4,19 @@ Every piece of data in this project is free, public and usable without an accoun
 Licences and services were checked on November 12, 2026, before any pack was built. The machine-readable
 list the build script uses is [`scripts/roof_sources.json`](../scripts/roof_sources.json).
 
-## The two roof packs
+## The three roof packs
 
 | Pack | What it is | Roofs | Used for |
 |---|---|---|---|
 | `roofs_maine_2022` | Eight southern-Maine towns, spring 2022 (leaf-off), one photo program | about 22,000 | Training the autoencoder, VAE and GAN |
 | `roofs_us_variety` | Five U.S. regions with different climates and building styles | about 3,000 | Testing: "is this roof unusual for a Maine-trained model?" |
+| `roofs_storm_michael_2018` | Five Florida towns photographed by NOAA the day after Hurricane Michael (October 2018), with FEMA's damage level for each home (976 Affected, 11 Destroyed, 1,013 none recorded) | 2,000 | ROOF-305: ranking real storm damage for adjusters |
 
 Each roof is a 24 m × 24 m square cut around one home and turned so the long side of the roof is horizontal.
 The yard around the roof is kept. Images are 128 × 128 JPEG (the lecture trains at 64 × 64).
 
-**Where to get them:** release `data-v1` of this repository has `roofs_maine_2022.zip` (about 213 MB) and
-`roofs_us_variety.zip` (about 29 MB). The size and SHA-256 checksum of each zip are in
+**Where to get them:** release `data-v1` of this repository has `roofs_maine_2022.zip` (about 213 MB),
+`roofs_us_variety.zip` (about 29 MB) and `roofs_storm_michael_2018.zip`. The size and SHA-256 checksum of each zip are in
 [`packs/`](../packs/) and on the release; the notebooks download the zips and check them automatically.
 
 ### Known limits (checked by eye on random samples)
@@ -28,6 +29,10 @@ The yard around the roof is kept. Images are 128 × 128 JPEG (the lecture trains
   reconstruction score misses "no house here". The exercise shows both ends so the class can discuss that limit.
 - **Variety pack:** 75 random roofs (15 per region) showed no empty lots. Larger homes, common in Florida
   and Arizona, can fill most of the 24 m square.
+- **Storm pack:** see [the storm pack](#the-storm-pack-hurricane-michael-2018) below: the labels are FEMA's,
+  made from imagery and not always from these exact photos; destroyed homes that were never rebuilt can be
+  missing from today's building outlines; about half the roofs are damaged by design; NOAA's web tiles stop at
+  about 30 cm per pixel, so these roofs are a little softer than the others.
 - Every roof was checked automatically for missing-photo areas, including the black-and-white checkerboard
   the Texas service draws where it has no photo; none remain.
 
@@ -45,6 +50,32 @@ The yard around the roof is kept. Images are 128 × 128 JPEG (the lecture trains
 | City of Tempe, 2024 Aerial Imagery (public map tiles, about 5-inch) | South Tempe neighbourhoods | **CC BY 4.0** | *Imagery: City of Tempe, 2024 Aerial Imagery (CC BY 4.0)* |
 
 Service addresses are in `scripts/roof_sources.json` and in each pack's `ATTRIBUTION.txt`.
+
+## The storm pack: Hurricane Michael, 2018
+
+Hurricane Michael came ashore near Mexico Beach, Florida, on October 10, 2018. The storm pack holds roofs from
+Mexico Beach, Panama City, Callaway and Parker, Lynn Haven and Marianna, each with FEMA's public damage level for
+that home.
+
+| Part | Source | Licence / terms | Attribution printed |
+|---|---|---|---|
+| Photos | NOAA National Geodetic Survey (Remote Sensing Division), **Emergency Response Imagery** of Hurricane Michael, flown October 11–14, 2018 ([storm page](https://storms.ngs.noaa.gov/storms/michael/index.html)); web tiles at zoom 19, about 30 cm per pixel | **Public domain** (a work of the U.S. Government); credit to NOAA appreciated | *Imagery: NOAA National Geodetic Survey, Emergency Response Imagery, Hurricane Michael* |
+| Damage labels | FEMA, **Geospatial Damage Assessments Public** (the FEMA Historical Geospatial Damage Assessment Database), [layer 0](https://services.arcgis.com/XG15cJAlne2vxtgt/ArcGIS/rest/services/FEMA_Historical_Geospatial_Damage_Assessment_Database/FeatureServer/0) | Public FEMA dataset, intended for public access and use (U.S. Government work) | *Damage labels: FEMA Geospatial Damage Assessments* |
+
+- **The labels.** For Hurricane Michael, FEMA's analysts judged wind damage from aerial imagery ("Remote
+  Sensing") and marked each damaged home **Affected** (some damage) or **Destroyed**. Modeled estimates are left
+  out. A home with no FEMA point inside or within 6 m of its outline is labelled **none recorded**: FEMA recorded
+  nothing there, which usually, but not always, means no damage. Only neighbourhoods where FEMA recorded damage
+  are used, and homes without recorded damage are kept at about the same number as damaged ones.
+- **What a model can see.** NOAA's free web tiles are about 30 cm per pixel, while FEMA's analysts worked from
+  sharper imagery, and "none recorded" includes some plainly damaged homes. In our tests, no model reached better
+  than an AUC of about 0.66 on these labels (see the run-sheet): good enough to order visits better than random,
+  far from good enough to decide anything on its own.
+- **Why Michael and not a newer storm.** FEMA's public historical database ends in 2020, and Michael's labels
+  are the ones made from imagery (Laura's, for example, are modeled).
+- **Privacy by design.** FEMA's points are used only during the build, to label each roof, and are never stored:
+  the pack's manifest adds just two columns, `damage` (the level) and `assessment` (how it was judged, for
+  example *Remote Sensing / Wind*). No coordinates, addresses or IDs, as in every pack.
 
 ## Building outlines: USA Structures (ORNL / FEMA)
 
@@ -138,6 +169,7 @@ download or run them.
 | Roof area, long and short side, turn angle | Coordinates, parcel or building IDs |
 | Building-use class (for example *Single Family Dwelling*) | Building outlines |
 | Town, state and photo year | Anything that locates a specific home |
+| Storm pack only: FEMA's damage level and how it was judged | FEMA's assessment points or their coordinates |
 | `ATTRIBUTION.txt`, `README.txt`, `SHA256SUMS.txt`, `build_report.json` | |
 
 The build script refuses to zip a pack if its privacy check finds a location-like field or number.
@@ -155,5 +187,6 @@ The build script refuses to zip a pack if its privacy check finds a location-lik
 | Hillsborough County (Tampa) imagery | Restricted vendor licence |
 | Maricopa County imagery | Sold, not free |
 | Texas Imagery Service | Licensed to subscribing agencies only |
+| FEMA damage assessments for storms after 2020 (for example Hurricane Ian, 2022) | Not in FEMA's public historical database, which ends in 2020 |
 | USDA NAIP (used only in the first data test) | Free, but about 0.6 m per pixel is too blurry for roofs |
 | AIRS (Aerial Imagery for Roof Segmentation) | Its licence is listed as unknown |
